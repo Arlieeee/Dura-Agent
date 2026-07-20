@@ -146,3 +146,7 @@ dura-agent/
 │  └─ skills/                # markdown 技能
 └─ apps/web/                 # Next.js 聊天前端(SSE 消费 + reducer + 冷加载)
 ```
+
+## License
+
+[MIT](./LICENSE)
