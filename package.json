@@ -1,0 +1,10 @@
+{
+  "name": "dura-agent",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:server": "npm run dev -w apps/server",
+    "dev:web": "npm run dev -w apps/web",
+    "test": "npm run test -w apps/server"
+  }
+}

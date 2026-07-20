@@ -1,0 +1,39 @@
+# 本地起 Postgres + Redis;`--profile prod` 再加 server 容器(一键全栈)
+#   开发:  docker compose up -d                  (pg+redis,server 用 npm run dev:server)
+#   生产:  docker compose --profile prod up -d   (pg+redis+server 容器;需 .env.local 配 AUTH_SECRET/PROVIDER_*)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: duraagent, POSTGRES_PASSWORD: duraagent, POSTGRES_DB: duraagent }
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U duraagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  server:
+    profiles: ["prod"]
+    build: .
+    ports: ["8787:8787"]
+    environment:
+      DATABASE_URL: postgres://duraagent:duraagent@postgres:5432/duraagent
+      REDIS_URL: redis://redis:6379
+      RUNNER_MODE: bullmq
+    env_file:
+      - path: .env.local        # AUTH_SECRET / PROVIDER_* / CORS_ORIGIN 等从这里进容器(不烧进镜像)
+        required: false
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+volumes:
+  pgdata:
