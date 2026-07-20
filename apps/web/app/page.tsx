@@ -523,8 +523,7 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
 
   return (
     <div className={`app ${panel ? 'with-panel' : ''}`}>
-      {sideOpen && (
-        <nav className="side">
+      <nav className={`side ${sideOpen ? '' : 'closed'}`} aria-hidden={!sideOpen}>
           <div className="logo"><Seal /><b>Dura<span>-Agent</span></b></div>
           <button className="side-new" onClick={newThread}><Ic n="plus" s={14} /> 新对话</button>
           <div className="side-list">
@@ -540,8 +539,7 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
             <span className="uname">{auth.user.username}</span>
             <button className="ghost iconbtn" title="退出登录" onClick={onLogout}><Ic n="logout" s={14} /></button>
           </div>
-        </nav>
-      )}
+      </nav>
       <main className="shell">
         <header>
           <button className="icb" title="会话列表" onClick={() => setSideOpen(!sideOpen)}><Ic n="panel" s={16} /></button>
@@ -589,8 +587,8 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
           <div className="hint">Dura-Agent 可能出错，请核查关键结论 · Enter 发送</div>
         </footer>
       </main>
-      {panel && (
-        <aside className="panel">
+      <aside className={`panel ${panel ? '' : 'closed'}`} aria-hidden={!panel}>
+        <div className="panel-inner">
           <div className="panel-head">
             <b>{doc ? doc.title : `文档(${artifacts.length})`}</b>
             {doc && <a href={`${API}/api/artifacts/${doc.id}`} target="_blank" rel="noreferrer"><Ic n="ext" s={12} /> 原文</a>}
@@ -604,8 +602,8 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
                 ? <ul className="doclist">{artifacts.map(a => <li key={a.id}><button onClick={() => openDoc(a.id)}><Ic n="file" /> {a.title}</button></li>)}</ul>
                 : <div className="empty">还没有文档。让 agent「整理成文档」试试。</div>}
           </div>
-        </aside>
-      )}
+        </div>
+      </aside>
     </div>
   );
 }

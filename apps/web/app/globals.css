@@ -38,7 +38,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--dai);outline-of
 /* ============ 侧边栏(毛玻璃) ============ */
 .side{width:240px;flex-shrink:0;display:flex;flex-direction:column;padding:16px 13px 14px;gap:10px;
   background:var(--glass);backdrop-filter:blur(18px) saturate(1.15);-webkit-backdrop-filter:blur(18px) saturate(1.15);
-  border-right:1px solid var(--line)}
+  border-right:1px solid var(--line);
+  transition:margin-left .32s cubic-bezier(.4,0,.2,1),opacity .26s ease}
+.side.closed{margin-left:-240px;opacity:0;pointer-events:none}
 .logo{display:flex;align-items:center;gap:10px;padding:2px 8px 12px;cursor:default}
 .logo .mark{width:28px;height:28px;flex-shrink:0;transition:transform .25s cubic-bezier(.3,1.4,.5,1);
   filter:drop-shadow(0 2px 6px rgba(166,59,42,.25))}
@@ -238,8 +240,14 @@ footer{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:12px 24px 14p
   letter-spacing:.03em;pointer-events:none}
 
 /* ============ artifacts 面板(玻璃) ============ */
-.panel{width:min(44%,600px);border-left:1px solid var(--line);display:flex;flex-direction:column;
-  background:rgba(252,251,249,.72);backdrop-filter:blur(18px) saturate(1.15);-webkit-backdrop-filter:blur(18px) saturate(1.15)}
+.panel{width:min(44%,600px);border-left:1px solid var(--line);overflow:hidden;flex-shrink:0;
+  background:rgba(252,251,249,.72);backdrop-filter:blur(18px) saturate(1.15);-webkit-backdrop-filter:blur(18px) saturate(1.15);
+  transition:width .32s cubic-bezier(.4,0,.2,1)}
+.panel.closed{width:0;border-left:0}
+.panel.closed .panel-inner{opacity:0}
+/* 内容固定宽度,收合时被裁切而非挤压 */
+.panel-inner{width:min(44vw,600px);height:100%;display:flex;flex-direction:column;
+  transition:opacity .26s ease}
 .panel-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line)}
 .panel-head b{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:600}
 .panel-head a{color:var(--dai);font-size:12px;display:inline-flex;align-items:center;gap:4px;text-decoration:none}
@@ -278,5 +286,6 @@ footer{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:12px 24px 14p
 @media (prefers-reduced-motion:reduce){
   .inkdrop::before,.spin::before,.flowline,.msg,.enso .c1,.enso .c2{animation:none!important}
   .flowline{opacity:0!important}
+  .side,.panel,.panel-inner{transition:none!important}
 }
 @media (max-width:860px){.side{display:none}.panel{display:none}}
