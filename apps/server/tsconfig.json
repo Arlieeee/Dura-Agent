@@ -8,5 +8,5 @@
     "allowImportingTsExtensions": false,
     "noEmit": true
   },
-  "include": ["src", "../../packages/protocol/src"]
+  "include": ["src", "test", "../../packages/protocol/src"]
 }

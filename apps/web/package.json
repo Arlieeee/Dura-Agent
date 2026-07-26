@@ -1,5 +1,5 @@
 {
-  "name": "@dura-agent/web",
+  "name": "@my-agent/web",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

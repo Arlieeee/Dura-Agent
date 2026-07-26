@@ -1,5 +1,5 @@
 {
-  "name": "dura-agent",
+  "name": "my-agent",
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {

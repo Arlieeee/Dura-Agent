@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 跳过可选依赖(Pi 只在跑对照评测时才需要,CI 里不跑要 API key 的那部分)
+      # Runs before anything else: a leak is worse than a broken build.
+      - name: No internal references
+        run: ./scripts/check-no-internal-refs.sh
+
+      - run: npm ci --omit=optional
+
+      - name: 类型检查
+        run: |
+          npx tsc --noEmit -p apps/server
+          npx tsc --noEmit -p packages/bench
+
+      - name: 引擎单测(fold / decide / auth / 工具层)
+        run: npm test
+
+      # 评测本身也要被评测:标准解必须满分、不做事必须扣分、作弊必须判 0
+      - name: 评测 oracle 自测
+        run: npm test -w packages/bench
+
+      # 零 API 成本的故障注入回归。这一条是守门员:
+      # "瞬时错误被当终态导致 turn 永久死亡" 这类 bug 曾经真实存在过,不能让它回来。
+      - name: 韧性评测(崩溃恢复 / 重复投递 / 悬空调用 / 上下文膨胀)
+        run: npm run bench:resilience -w packages/bench

@@ -17,7 +17,7 @@ export const webSearch: ToolFn = async (args, ctx) => {
   }
   try {
     const r = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), {
-      headers: { 'user-agent': 'Mozilla/5.0 (dura-agent)' }, signal: AbortSignal.timeout(8000),
+      headers: { 'user-agent': 'Mozilla/5.0 (my-agent-learning)' }, signal: AbortSignal.timeout(8000),
     });
     const html = await r.text();
     const results: { title: string; url: string; snippet: string }[] = [];

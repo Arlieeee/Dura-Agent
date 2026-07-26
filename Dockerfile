@@ -1,4 +1,4 @@
-# dura-agent server 镜像:tsx 直跑 TS(单进程网关+引擎;web 走 Vercel/静态托管,不进此镜像)
+# my-agent server 镜像:tsx 直跑 TS(单进程网关+引擎;web 走 Vercel/静态托管,不进此镜像)
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production

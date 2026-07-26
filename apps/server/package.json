@@ -1,5 +1,5 @@
 {
-  "name": "@dura-agent/server",
+  "name": "@my-agent/server",
   "private": true,
   "type": "module",
   "scripts": {

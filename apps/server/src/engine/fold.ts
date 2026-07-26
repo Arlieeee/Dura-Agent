@@ -11,13 +11,17 @@ export interface TurnState {
   step: number;
   summary?: string;
   eventCount: number;
+  /** 本 turn 已发生过几次可重试失败。用来给重投设上限,避免坏消息无限打转。 */
+  attempts: number;
+  /** 已有结果的 tool_call_id。runner 靠它识别"这一步只是重放",不必再留痕。 */
+  seenCallIds: Set<string>;
 }
 
 export function fold(events: AgentEvent[], turnId: string): TurnState {
   let anchor = -1; let summary: string | undefined;
   events.forEach((e, i) => { if (e.kind === 'compaction.summary') { anchor = i; summary = String(e.payload.summary ?? ''); } });
 
-  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0 };
+  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set() };
   const resultSeen = new Set<string>();
 
   for (let i = anchor + 1; i < events.length; i++) {
@@ -66,6 +70,10 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
         st.msgs.push({ role: 'tool', tool_call_id: id, content: JSON.stringify({ answer: p.answer }) });
         break;
       }
+      case 'turn.error':
+        // 只计数、不改 status:turn 仍是 running,重投后 decide 会从断点继续
+        if (e.turn_id === turnId) st.attempts++;
+        break;
       case 'turn.finished':
         if (e.turn_id === turnId) st.status = 'finished';
         break;
@@ -75,10 +83,15 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
   // 喂给 OpenAI 协议会因「tool_calls 后缺 tool 消息」400,毒害整个 thread)
   const pendingIds = new Set(st.pendingCalls.map(c => c.id));
   st.msgs = st.msgs.filter(m => {
-    if (m.role !== 'assistant' || !m.tool_calls) return true;
-    m.tool_calls = m.tool_calls.filter(c => resultSeen.has(c.id) || pendingIds.has(c.id) || st.suspended?.tool_call_id === c.id);
-    if (!m.tool_calls.length) m.tool_calls = undefined;
-    return !!(m.content || m.reasoning_content || m.tool_calls);   // 清洗后彻底空的 assistant 消息一并剔除
+    if (m.role !== 'assistant') return true;
+    if (m.tool_calls) {
+      m.tool_calls = m.tool_calls.filter(c => resultSeen.has(c.id) || pendingIds.has(c.id) || st.suspended?.tool_call_id === c.id);
+      if (!m.tool_calls.length) m.tool_calls = undefined;
+    }
+    // 三者皆空的 assistant 一律剔除。重投时模型会重新产出已存在的 tool_call,append 幂等 no-op,
+    // 于是日志里留下"光杆 assistant";若放行,decide 会把它当成纯文本收尾而误判 turn 已完成。
+    return !!(m.content || m.reasoning_content || m.tool_calls);
   });
+  st.seenCallIds = resultSeen;
   return st;
 }

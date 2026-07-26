@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 export function loadLocalEnv() {
   const here = dirname(fileURLToPath(import.meta.url));
-  const roots = [process.cwd(), join(here, '..'), join(here, '../../..'), join(here, '../../../..')]; // cwd → server → 仓库根(兼容 monorepo 上层)
+  const roots = [process.cwd(), join(here, '..'), join(here, '../../..'), join(here, '../../../..')]; // cwd → server → my-agent → agent-learning
   const seen = new Set<string>();
   for (const root of roots) {
     for (const name of ['.env.local', '.env']) {

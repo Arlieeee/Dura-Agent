@@ -1,4 +1,4 @@
-/** gateway:HTTP API + SSE + 轻量账号。经典事件驱动 agent 的路由风格(/threads/:id/turns、/continue、/sse)。 */
+/** gateway:HTTP API + SSE + 轻量账号。路由按资源组织(/threads/:id/turns、/continue、/sse)。 */
 import { loadLocalEnv } from './env.js';
 loadLocalEnv();
 import Fastify from 'fastify';

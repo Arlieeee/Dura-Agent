@@ -1,4 +1,4 @@
-/** dura-agent API 层 E2E:直连 localhost:8787,输出 PASS/FAIL 列表。 */
+/** my-agent API 层 E2E:直连 localhost:8787,输出 PASS/FAIL 列表。 */
 const API = 'http://localhost:8787';
 const RUN = Math.random().toString(36).slice(2, 7);
 const results = [];

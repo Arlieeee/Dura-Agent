@@ -1,0 +1,21 @@
+{
+  "name": "@my-agent/bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "tsx src/cli.ts",
+    "bench:resilience": "tsx src/resilience-cli.ts",
+    "bench:regen": "tsx src/regen.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "bench:doctor": "tsx src/doctor.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "optionalDependencies": {
+    "@earendil-works/pi-agent-core": "^0.82.1",
+    "@earendil-works/pi-ai": "^0.82.1"
+  }
+}

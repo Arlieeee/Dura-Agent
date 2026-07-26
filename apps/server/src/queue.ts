@@ -1,17 +1,25 @@
 /** 执行分发:inline(零依赖,进程内直跑)或 bullmq(Redis 队列,可 kill 演练/水平扩容)。
- * 生产级系统常见做法是"首段进程内直跑保延迟,长工作交队列"—— 这里简化为整个 turn 二选一。 */
+ * 常见做法是"首段进程内直跑保延迟,长工作交队列"—— 这里简化为整个 turn 二选一。 */
 import type { RunnerDeps } from './engine/runner.js';
 import { runTurn } from './engine/runner.js';
 
-export interface Dispatcher { kick(threadId: string, turnId: string): Promise<void>; close(): Promise<void> }
+export interface Dispatcher { kick(threadId: string, turnId: string, attempt?: number): Promise<void>; close(): Promise<void> }
 
 class InlineDispatcher implements Dispatcher {
+  private timers = new Set<NodeJS.Timeout>();
   constructor(private deps: RunnerDeps) {}
-  async kick(threadId: string, turnId: string) {
+  async kick(threadId: string, turnId: string, attempt = 0) {
     // 不 await:HTTP 返回 SSE 流,runner 后台推进(与连接解耦)
-    runTurn(this.deps, threadId, turnId).catch(err => console.error('[runner]', err));
+    runTurn(this.deps, threadId, turnId).catch(err => {
+      // runner 只在"可重试且未超上限"时抛;超上限它自己写 turn.finished 并正常返回。
+      // 所以这里收到异常 = 该退避重投。inline 没有队列,退避靠定时器自己扛。
+      console.error(`[runner] turn ${turnId} 抛出,${1 << attempt}s 后重投:`, err?.message ?? err);
+      const t = setTimeout(() => { this.timers.delete(t); void this.kick(threadId, turnId, attempt + 1); }, (1 << attempt) * 1000);
+      t.unref?.();
+      this.timers.add(t);
+    });
   }
-  async close() {}
+  async close() { for (const t of this.timers) clearTimeout(t); this.timers.clear(); }
 }
 
 class BullDispatcher implements Dispatcher {

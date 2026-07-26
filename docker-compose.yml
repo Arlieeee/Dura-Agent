@@ -4,11 +4,11 @@
 services:
   postgres:
     image: postgres:16-alpine
-    environment: { POSTGRES_USER: duraagent, POSTGRES_PASSWORD: duraagent, POSTGRES_DB: duraagent }
+    environment: { POSTGRES_USER: myagent, POSTGRES_PASSWORD: myagent, POSTGRES_DB: myagent }
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U duraagent"]
+      test: ["CMD-SHELL", "pg_isready -U myagent"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -25,7 +25,7 @@ services:
     build: .
     ports: ["8787:8787"]
     environment:
-      DATABASE_URL: postgres://duraagent:duraagent@postgres:5432/duraagent
+      DATABASE_URL: postgres://myagent:myagent@postgres:5432/myagent
       REDIS_URL: redis://redis:6379
       RUNNER_MODE: bullmq
     env_file:

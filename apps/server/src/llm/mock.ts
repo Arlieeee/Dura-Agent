@@ -31,7 +31,7 @@ export class MockProvider implements ChatProvider {
     if (!hasDoc && answer.includes('文档')) {
       await stream('reasoning', '用户要文档,调用 write_document。');
       return { reasoning: 'write doc', text: '', tool_calls: [{ id: stableId('d'), name: 'write_document',
-        args: { title: `关于「${userText.slice(0, 24)}」的整理`, content: `# ${userText}\n\n> 由 dura-agent(mock)基于搜索结果生成\n\n## 要点\n\n${summarizeTools(toolResults)}\n` } }] };
+        args: { title: `关于「${userText.slice(0, 24)}」的整理`, content: `# ${userText}\n\n> 由 my-agent(mock)基于搜索结果生成\n\n## 要点\n\n${summarizeTools(toolResults)}\n` } }] };
     }
     const final = hasDoc || answer.includes('文档')
       ? '已生成在线文档 ✅ 点击上方工具卡片里的链接查看。还需要补充或改写吗?'

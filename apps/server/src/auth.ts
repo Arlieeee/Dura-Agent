@@ -4,7 +4,7 @@
  *  - 生产(NODE_ENV=production)必须显式设置 AUTH_SECRET,否则拒绝启动 */
 import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 
-const DEFAULT_SECRET = 'dura-agent-dev-secret';
+const DEFAULT_SECRET = 'my-agent-dev-secret';
 const SECRET = process.env.AUTH_SECRET ?? DEFAULT_SECRET;
 if (process.env.NODE_ENV === 'production' && SECRET === DEFAULT_SECRET) {
   console.error('[auth] 生产模式必须设置 AUTH_SECRET(否则任何人都能伪造 token)。启动中止。');

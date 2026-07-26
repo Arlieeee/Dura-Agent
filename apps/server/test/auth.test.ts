@@ -16,7 +16,7 @@ test('错误口令不通过', () => {
 });
 
 test('旧版 sha256 哈希:正确口令返回 upgrade,错误口令 false', () => {
-  const legacy = createHash('sha256').update('pass1234|dura-agent-dev-secret').digest('hex');
+  const legacy = createHash('sha256').update('pass1234|my-agent-dev-secret').digest('hex');
   assert.equal(verifyPass('pass1234', legacy), 'upgrade');
   assert.equal(verifyPass('wrong', legacy), false);
 });
@@ -37,6 +37,6 @@ test('token 防篡改:改 userId / 改 exp / 改签名均无效', () => {
 test('过期 token 无效(手工构造过去的 exp)', async () => {
   const { createHmac } = await import('node:crypto');
   const exp = Math.floor(Date.now() / 1000) - 10;
-  const sig = createHmac('sha256', 'dura-agent-dev-secret').update(`usr_abc|${exp}`).digest('hex').slice(0, 32);
+  const sig = createHmac('sha256', 'my-agent-dev-secret').update(`usr_abc|${exp}`).digest('hex').slice(0, 32);
   assert.equal(verifyToken(`usr_abc.${exp}.${sig}`), null);
 });
