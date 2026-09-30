@@ -15,12 +15,12 @@ jobs:
           node-version: 22
           cache: npm
 
-      # 跳过可选依赖(Pi 只在跑对照评测时才需要,CI 里不跑要 API key 的那部分)
       # Runs before anything else: a leak is worse than a broken build.
       - name: No internal references
         run: ./scripts/check-no-internal-refs.sh
 
-      - run: npm ci --omit=optional
+      # 可选依赖也要装:queue.ts 与 harness/pi.ts 的类型检查依赖它们(要 API key 的评测 CI 里照样不跑)
+      - run: npm ci
 
       - name: 类型检查
         run: |

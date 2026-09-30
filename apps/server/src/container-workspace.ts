@@ -49,7 +49,8 @@ export class ContainerWorkspace implements WorkspaceLike {
     // base64 回传:文件里可能有任何字节,原样走 stdout 会被换行/编码搅乱
     // maxOutput 必须放开:默认 16KB 上限是给模型看的,套在这里会把 12KB 以上的文件读残
     // —— 而且是**静默**读残,exit_code 照样 0。
-    const r = await this.exec.exec(`base64 -w0 ${q(p)} 2>/dev/null || base64 ${q(p)}`,
+    // 走 stdin 而不是位置参数:BSD(macOS)的 base64 不认位置参数,GNU 的折行下面会剥掉
+    const r = await this.exec.exec(`base64 < ${q(p)}`,
       { timeoutMs: 60_000, maxOutput: 8 << 20 });
     if (r.exit_code !== 0) throw new Error(`读取失败 ${rel}:${(r.stderr || r.error || '').slice(0, 160)}`);
     return Buffer.from(r.stdout.replace(/\s/g, ''), 'base64').toString('utf8');
@@ -73,14 +74,14 @@ export class ContainerWorkspace implements WorkspaceLike {
 
   async list(rel = '.', max = 500): Promise<string[]> {
     const p = this.resolve(rel);
+    // 不用 -printf:那是 GNU 独有,BSD(macOS)的 find 不认。目录靠尾部 / 区分
+    const skip = `-not -path '*/node_modules/*' -not -path '*/.git/*'`;
     const r = await this.exec.exec(
-      `find ${q(p)} -not -path '*/node_modules/*' -not -path '*/.git/*' -printf '%y %p\\n' 2>/dev/null | head -n ${max}`,
+      `{ find ${q(p)} ${skip} -type d | sed 's|$|/|'; find ${q(p)} ${skip} ! -type d; } 2>/dev/null | head -n ${max}`,
       { timeoutMs: 60_000 });
     if (r.exit_code !== 0) return [];
-    return r.stdout.split('\n').filter(Boolean).map(line => {
-      const [type, ...rest] = line.split(' ');
-      const rp = this.rel(rest.join(' '));
-      return type === 'd' ? `${rp}/` : rp;
-    }).filter(x => x && x !== './' && x !== '.').sort();
+    return r.stdout.split('\n').filter(Boolean).map(line =>
+      line.endsWith('/') ? `${this.rel(line.slice(0, -1))}/` : this.rel(line),
+    ).filter(x => x && x !== './' && x !== '.').sort();
   }
 }
