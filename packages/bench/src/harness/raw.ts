@@ -53,7 +53,7 @@ export const rawHarness: Harness = {
 
       return {
         steps, finalText: out.text, llmCalls: 1, toolCalls: written.length, toolErrors: 0,
-        promptTokens: out.usage?.prompt_tokens ?? 0, completionTokens: out.usage?.completion_tokens ?? 0,
+        promptTokens: out.usage?.prompt_tokens ?? 0, completionTokens: out.usage?.completion_tokens ?? 0, cachedTokens: out.usage?.cached_tokens,
         wallMs: Date.now() - t0, terminated: 'stop',
       };
     } catch (err: any) {

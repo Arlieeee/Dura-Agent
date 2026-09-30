@@ -28,7 +28,7 @@ export function buildSystemPrompt({ groups, summary, skills, workspaceHint, memo
     base,
     // 记忆排在工作区之前:它是"长期约定",应该先于本次任务的具体材料被读到
     memoryHint || '',
-    workspaceHint ? `【工作区文件】\n${workspaceHint}` : '',
+    workspaceHint ? `【开工时的工作区文件】\n${workspaceHint}` : '',
     summary ? `【此前对话摘要】${summary}` : '',
     skills ? `【可用技能】\n${skills}` : '',
   ].filter(Boolean).join('\n\n');

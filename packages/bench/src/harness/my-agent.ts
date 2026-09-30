@@ -64,7 +64,7 @@ export const myAgentHarness: Harness = {
     const events = await store.load(threadId);
     const steps: TraceStep[] = [];
     const byCallId = new Map<string, TraceStep>();
-    let llmCalls = 0, toolCalls = 0, toolErrors = 0, promptTokens = 0, completionTokens = 0, finalText = '';
+    let llmCalls = 0, toolCalls = 0, toolErrors = 0, promptTokens = 0, completionTokens = 0, cachedTokens = 0, finalText = '';
 
     for (const e of events) {
       const p = e.payload as any;
@@ -73,8 +73,9 @@ export const myAgentHarness: Harness = {
           llmCalls++;
           promptTokens += p.usage?.prompt_tokens ?? 0;
           completionTokens += p.usage?.completion_tokens ?? 0;
+          cachedTokens += p.usage?.cached_tokens ?? 0;
           if (p.text) finalText = String(p.text);
-          steps.push({ kind: 'llm', text: p.text, promptTokens: p.usage?.prompt_tokens, completionTokens: p.usage?.completion_tokens });
+          steps.push({ kind: 'llm', text: p.text, promptTokens: p.usage?.prompt_tokens, completionTokens: p.usage?.completion_tokens, cachedTokens: p.usage?.cached_tokens });
           break;
         }
         case 'tool.call': {
@@ -107,6 +108,6 @@ export const myAgentHarness: Harness = {
       }
     }
 
-    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, wallMs: Date.now() - t0, terminated, errorMessage };
+    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, cachedTokens, wallMs: Date.now() - t0, terminated, errorMessage };
   },
 };

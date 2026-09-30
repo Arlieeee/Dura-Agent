@@ -48,7 +48,8 @@ export interface ToolCallReq { id: string; name: string; args: Record<string, un
 export interface ToolSpec {
   name: string; description: string; parameters: Record<string, unknown>; client?: boolean;
 }
-export interface Usage { prompt_tokens: number; completion_tokens: number }
+/** cached_tokens 是 prompt_tokens 里命中服务端前缀缓存的部分(含在 prompt_tokens 内,不另加)。 */
+export interface Usage { prompt_tokens: number; completion_tokens: number; cached_tokens?: number }
 export interface ChatResult { reasoning?: string; text: string; tool_calls: ToolCallReq[]; usage?: Usage }
 export type ChatDelta =
   | { kind: 'reasoning' | 'text'; delta: string }

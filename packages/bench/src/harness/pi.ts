@@ -97,7 +97,7 @@ export const piHarness: Harness = {
     }
 
     // 从 Pi 的消息树里抽 trace。它自带 usage 与成本核算,直接用。
-    let llmCalls = 0, promptTokens = 0, completionTokens = 0, finalText = '';
+    let llmCalls = 0, promptTokens = 0, completionTokens = 0, cachedTokens = 0, finalText = '';
     for (const m of agent.state.messages ?? []) {
       if ((m as any).role !== 'assistant') continue;
       llmCalls++;
@@ -108,6 +108,7 @@ export const piHarness: Harness = {
       if (u) {
         promptTokens += (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0);
         completionTokens += u.output ?? 0;
+        cachedTokens += u.cacheRead ?? 0;
       }
       const text = ((m as any).content ?? [])
         .filter((c: any) => c?.type === 'text').map((c: any) => c.text).join('');
@@ -116,6 +117,7 @@ export const piHarness: Harness = {
         kind: 'llm', text,
         promptTokens: u ? (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0) : undefined,
         completionTokens: u?.output,
+        cachedTokens: u?.cacheRead,
       });
     }
 
@@ -126,6 +128,6 @@ export const piHarness: Harness = {
       : errorMessage ? 'error'
       : 'stop';
 
-    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, wallMs, terminated, errorMessage };
+    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, cachedTokens, wallMs, terminated, errorMessage };
   },
 };
