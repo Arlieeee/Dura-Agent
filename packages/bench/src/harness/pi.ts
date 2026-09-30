@@ -18,6 +18,7 @@ import { openWorkspace } from '../../../../apps/server/src/workspace.js';
 import { activeTools, runTool } from '../../../../apps/server/src/tools/index.js';
 import { buildSystemPrompt, buildContextBlock } from '../../../../apps/server/src/prompt.js';
 import { withTimeout } from './raw.js';
+import { runSalt } from '../provider.js';
 
 export async function piAvailable(): Promise<boolean> {
   try { await import('@earendil-works/pi-agent-core'); return true; } catch { return false; }
@@ -70,7 +71,7 @@ export const piHarness: Harness = {
     const hint = (await ws.list()).slice(0, 100).join('\n') || '(空目录)';
     const agent = new Agent({
       initialState: {
-        systemPrompt: buildSystemPrompt({ groups: ['coding'] }),
+        systemPrompt: [runSalt(), buildSystemPrompt({ groups: ['coding'] })].filter(Boolean).join('\n'),
         model,
         thinkingLevel: 'off',
         tools: tools as any,

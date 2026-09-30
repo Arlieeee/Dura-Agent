@@ -31,6 +31,7 @@ const flag = (name: string) => process.argv.includes(`--${name}`);
 
 async function main() {
   loadLocalEnv();
+  process.env.BENCH_RUN_SALT ??= `[bench ${Math.random().toString(36).slice(2, 10)}]`;
   const tasks = selectTasks(arg('tasks'));
   if (!tasks.length) {
     console.error(`没有匹配的任务。可用:\n${allTasks.map(t => `  ${t.id.padEnd(32)} ${t.category}`).join('\n')}`);
