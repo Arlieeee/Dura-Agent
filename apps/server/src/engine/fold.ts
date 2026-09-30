@@ -17,13 +17,15 @@ export interface TurnState {
   seenCallIds: Set<string>;
   /** 日志里有本 turn 的 user.interrupt。 */
   interrupted: boolean;
+  /** 已开工(tool.started)的 tool_call_id。开工了却还在 pendingCalls 里 = 执行中途崩溃。 */
+  startedCallIds: Set<string>;
 }
 
 export function fold(events: AgentEvent[], turnId: string): TurnState {
   let anchor = -1; let summary: string | undefined;
   events.forEach((e, i) => { if (e.kind === 'compaction.summary') { anchor = i; summary = String(e.payload.summary ?? ''); } });
 
-  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false };
+  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, startedCallIds: new Set() };
   const resultSeen = new Set<string>();
 
   for (let i = anchor + 1; i < events.length; i++) {
@@ -75,6 +77,9 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
       case 'turn.error':
         // 只计数、不改 status:turn 仍是 running,重投后 decide 会从断点继续
         if (e.turn_id === turnId) st.attempts++;
+        break;
+      case 'tool.started':
+        st.startedCallIds.add(String(p.tool_call_id));
         break;
       case 'user.interrupt':
         if (e.turn_id === turnId) st.interrupted = true;

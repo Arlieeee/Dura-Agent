@@ -6,12 +6,13 @@
  *   R2 重复投递:队列 at-least-once,同一个 turn 被 kick 两次会不会重复扣费/重复写
  *   R3 悬空调用:崩溃留下没有 result 的 tool_call,会不会毒死整个会话
  *   R4 上下文膨胀:长会话有没有压缩锚点,还是一路涨到爆
+ *   R5 工具中途崩溃:工具已执行、结果没落盘时进程没了,重投会不会把副作用再做一遍
  * 判定全是确定性断言,不看模型发挥。 */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { ChatMsg, ChatResult, ChatDelta, ToolSpec } from '../../../packages/protocol/src/index.js';
+import type { AgentEvent, ChatMsg, ChatResult, ChatDelta, ToolSpec } from '../../../packages/protocol/src/index.js';
 import type { ChatProvider } from '../../../apps/server/src/llm/provider.js';
 import { MemoryStore, eventId } from '../../../apps/server/src/store.js';
 import { runTurn, newThreadId, newTurnId } from '../../../apps/server/src/engine/runner.js';
@@ -278,9 +279,67 @@ async function r4ReactMin(): Promise<ResilienceResult> {
 }
 
 /* ================= 编排 ================= */
+/* ================= R5:工具执行中崩溃(副作用已发生,结果未落盘) ================= */
+/** 崩溃点落在"工具已经执行、tool.result 还没写进日志"之间 —— 至少一次投递最难受的位置。
+ *  直接重跑会把副作用(扣款 / 追加写)做两遍;把孤儿 call 剔掉重来,模型不知道试过,照样再做一遍。 */
+class CrashOnToolResult extends MemoryStore {
+  private crashed = false;
+  async append(evt: AgentEvent) {
+    if (!this.crashed && evt.kind === 'tool.result') { this.crashed = true; throw new Error('模拟进程崩溃:工具已执行,结果未落盘'); }
+    return super.append(evt);
+  }
+}
+const CHARGE_SCRIPT: Act[] = [{ tool: 'bash', args: { command: 'echo charged >> ledger.txt' } }, { text: '已扣款' }];
+const R5_PROBE = '工具已执行、结果未落盘时崩溃,重投会不会把副作用(追加写)再做一遍';
+
+async function withBash<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = process.env.ENABLE_BASH;
+  process.env.ENABLE_BASH = '1';
+  try { return await fn(); } finally { if (prev === undefined) delete process.env.ENABLE_BASH; else process.env.ENABLE_BASH = prev; }
+}
+const ledgerLines = async (ws: Workspace) =>
+  (await ws.exists('ledger.txt')) ? (await ws.read('ledger.txt')).trim().split('\n').length : 0;
+
+async function r5MyAgent(): Promise<ResilienceResult> {
+  return withBash(() => withWorkspace(async ws => {
+    const store = new CrashOnToolResult();
+    const threadId = newThreadId(); const turnId = newTurnId();
+    await store.createThread(threadId, 'r', 'u');
+    await store.append({ id: eventId(turnId, 'turn.started', 'i'), thread_id: threadId, turn_id: turnId, kind: 'turn.started', payload: {} });
+    await store.append({ id: eventId(turnId, 'user.message', 'i'), thread_id: threadId, turn_id: turnId, kind: 'user.message', payload: { text: '扣一笔' } });
+
+    await runTurn({ store, provider: new ScriptedProvider(CHARGE_SCRIPT), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId).catch(() => {});
+    // 重投。provider 从第二步接着演,两种恢复策略面对的是同一个模型
+    await runTurn({ store, provider: new ScriptedProvider(CHARGE_SCRIPT.slice(1)), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId);
+
+    const lines = await ledgerLines(ws);
+    const events = await store.load(threadId);
+    const interrupted = events.some(e => e.kind === 'tool.result' && (e.payload as any).output?.error === 'interrupted');
+    const finished = events.some(e => e.kind === 'turn.finished' && (e.payload as any).reason === 'stop');
+    const passed = lines === 1 && finished;
+    return {
+      scenario: 'R5 工具中途崩溃', probe: R5_PROBE, harnessId: 'my-agent', passed,
+      detail: `重投后 ledger.txt ${lines} 行;${interrupted ? '开工留痕 + bash 不可重跑 → 补 interrupted 结果交给模型核实' : '孤儿 call 被重新执行'};收敛完成=${finished}`,
+    };
+  }));
+}
+
+async function r5ReactMin(): Promise<ResilienceResult> {
+  return withBash(() => withWorkspace(async ws => {
+    // 无持久化:崩溃前那次扣款已经发生,重启只能从头再演一遍
+    await runReactMin(new ScriptedProvider(CHARGE_SCRIPT), ws, '扣一笔', 4);
+    await runReactMin(new ScriptedProvider(CHARGE_SCRIPT), ws, '扣一笔', 4);
+    const lines = await ledgerLines(ws);
+    return {
+      scenario: 'R5 工具中途崩溃', probe: R5_PROBE, harnessId: 'react-min', passed: lines === 1,
+      detail: `无日志:重启从头重做,ledger.txt ${lines} 行`,
+    };
+  }));
+}
+
 export async function runResilience(): Promise<ResilienceResult[]> {
   const out: ResilienceResult[] = [];
-  for (const fn of [r1MyAgent, r1ReactMin, r2MyAgent, r2ReactMin, r3MyAgent, r3ReactMin, r4MyAgent, r4ReactMin]) {
+  for (const fn of [r1MyAgent, r1ReactMin, r2MyAgent, r2ReactMin, r3MyAgent, r3ReactMin, r4MyAgent, r4ReactMin, r5MyAgent, r5ReactMin]) {
     out.push(await fn());
   }
   return out.sort((a, b) => a.scenario.localeCompare(b.scenario) || a.harnessId.localeCompare(b.harnessId));
