@@ -1,6 +1,6 @@
 /** runner:执行 decide 产出的命令,结果作为新事件追加回日志。每轮重新 fold,恢复=正常路径。 */
 import { randomUUID } from 'node:crypto';
-import type { AgentEvent, Chunk } from '../../../../packages/protocol/src/index.js';
+import type { AgentEvent, Chunk, ToolSpec } from '../../../../packages/protocol/src/index.js';
 import type { EventStore } from '../store.js';
 import { eventId } from '../store.js';
 import { fold } from './fold.js';
@@ -11,7 +11,7 @@ import type { ChatProvider } from '../llm/provider.js';
 import { bus } from '../bus.js';
 import { loadSkills, skillToolAllowList } from '../skills.js';
 import { threadWorkspace, type Workspace } from '../workspace.js';
-import { buildSystemPrompt } from '../prompt.js';
+import { buildSystemPrompt, buildContextBlock } from '../prompt.js';
 import { MemoryDir } from '../memory.js';
 import { makeExecutor, type Executor } from '../executor.js';
 
@@ -92,6 +92,7 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
   const filter = { spawn: canSpawn, allow, memory: !!memory };
   const tools = toolSpecs(deps.toolset, filter);
   const groups = [...new Set(activeTools(deps.toolset, filter).map(t => t.group))];
+  const system = buildSystemPrompt({ groups, skills: await loadSkills(baseNames) });
   const emit = (c: Chunk) => bus.emit(threadId, c);
   const append = async (kind: AgentEvent['kind'], key: string, payload: Record<string, unknown>) => {
     const inserted = await store.append({ id: eventId(turnId, kind, key), thread_id: threadId, turn_id: turnId, kind, payload });
@@ -106,9 +107,6 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
   }, 5_000);
   const ctl = new AbortController();
   liveTurns.set(turnId, ctl);
-  // system prompt 每个 runner 只拼一次:各步逐字节相同,服务端前缀缓存才能从第二步起一直命中。
-  // 之前工作区清单只在第 0 步注入,第 1 步前缀一变就全量 miss,模型也从第 1 步起看不到清单了。
-  let system: string | undefined;
   const onParentAbort = () => void cancelTurn(store, threadId, turnId).catch(() => {});
   deps.signal?.addEventListener('abort', onParentAbort, { once: true });
   if (deps.signal?.aborted) onParentAbort();
@@ -159,19 +157,18 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
 
     switch (cmd.type) {
       case 'call_llm': {
-        if (system === undefined) {
-          // 工作区清单只在 coding 模式注入:让模型开局就知道有哪些文件,省掉一轮 list_files。
+        if (state.step === 0) {
+          // 工作区清单只在 coding 模式给:让模型开局就知道有哪些文件,省掉一轮 list_files。
           // 它是开工时的快照,之后新建的文件靠 list_files 看
-          const hint = groups.includes('coding')
+          const workspaceHint = groups.includes('coding')
             ? (await workspace.list()).slice(0, 100).join('\n') || '(空目录)'
             : undefined;
           // 索引常驻 + 对本轮输入自动预取相关正文。只给索引的话模型不会主动去 recall(实测)
-          const lastUser = [...state.msgs].reverse().find(m => m.role === 'user')?.content ?? '';
-          const memoryHint = memory ? await memory.contextFor(lastUser) : undefined;
-          system = buildSystemPrompt({
-            groups, summary: state.summary, skills: await loadSkills(baseNames),
-            workspaceHint: hint, memoryHint,
-          });
+          const query = String(events.find(e => e.turn_id === turnId && e.kind === 'user.message')?.payload.text ?? '');
+          const memoryHint = memory ? await memory.contextFor(query) : undefined;
+          const context = buildContextBlock({ workspaceHint, memoryHint });
+          // 每个 turn 至多一条快照,且只在内容变了时追加:日志只增不改,前缀缓存一路命中到新内容为止
+          if (context && context !== state.lastContext && await append('context.snapshot', 'turn', { text: context })) break;
         }
 
         const step = state.step;
@@ -239,7 +236,7 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
         await append('turn.finished', 'fin', { reason: cmd.reason });
         await store.upsertTurn({ id: turnId, thread_id: threadId, state: 'completed' });
         emit({ type: 'finish', finish_reason: cmd.reason });
-        await maybeCompact(deps, threadId, turnId);
+        await maybeCompact(deps, threadId, turnId, system, tools);
         return;
       }
       case 'noop': {
@@ -288,12 +285,16 @@ function makeSpawn(deps: RunnerDeps, parentThreadId: string, workspace: Workspac
   };
 }
 
-async function maybeCompact(deps: RunnerDeps, threadId: string, turnId: string) {
+async function maybeCompact(deps: RunnerDeps, threadId: string, turnId: string, system: string, tools: ToolSpec[]) {
   const events = await deps.store.load(threadId);
   const state = fold(events, turnId);
   if (state.eventCount < COMPACT_THRESHOLD) return;
-  const text = state.msgs.map(m => `${m.role}: ${m.content.slice(0, 300)}`).join('\n');
-  const summary = ((state.summary ? state.summary + '\n' : '') + await deps.provider.summarize(text)).slice(0, 2000);
+  // 摘要请求原样重放主对话的前缀(同一 system、同一套工具、同样的消息),只在末尾追加指令:
+  // 服务端前缀缓存一路命中到指令为止。另起一段 system prompt 的话,这次调用整段 miss。
+  // 上一次的摘要就在 msgs 开头,模型会把它并进新摘要
+  const summary = (await deps.provider.summarize([{ role: 'system', content: system }, ...state.msgs], tools)).trim().slice(0, 2000);
+  // 没拿到摘要(比如模型跑去调工具了)就不压缩:空摘要会把锚点前的历史整个丢掉
+  if (!summary) return;
   const last = events[events.length - 1];
   await deps.store.append({
     id: eventId(turnId, 'compaction.summary', String(last?.seq ?? events.length)),

@@ -79,11 +79,12 @@ export class OpenAICompatProvider implements ChatProvider {
     return { text, reasoning: reasoning || undefined, tool_calls, usage };
   }
 
-  async summarize(text: string): Promise<string> {
-    const r = await this.chat(
-      [{ role: 'system', content: '把以下对话压缩成 200 字以内的中文摘要,保留关键事实、决定与未决问题。' },
-       { role: 'user', content: text.slice(0, 12000) }], [], () => {});
+  async summarize(msgs: ChatMsg[], tools: ToolSpec[]): Promise<string> {
+    // 不能传 tool_choice: 'none' —— 实测 DeepSeek 会因此不渲染工具定义,前缀一变整段 miss
+    const r = await this.chat([...msgs, { role: 'user', content: SUMMARIZE }], tools, () => {});
     return r.text;
   }
 }
+const SUMMARIZE = '把以上对话压缩成 300 字以内的中文摘要,保留关键事实、决定、文件路径与未决问题;'
+  + '开头若有【此前对话摘要】,把它的要点并进来。只输出摘要正文,不要调用任何工具。';
 function safeJson(s: string): Record<string, unknown> { try { return JSON.parse(s || '{}'); } catch { return { _raw: s }; } }

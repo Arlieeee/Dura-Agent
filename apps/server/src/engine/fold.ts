@@ -9,7 +9,6 @@ export interface TurnState {
   pendingCalls: ToolCallReq[];
   suspended?: { tool_call_id: string; name: string; question: string; options?: string[] };
   step: number;
-  summary?: string;
   eventCount: number;
   /** 本 turn 已发生过几次可重试失败。用来给重投设上限,避免坏消息无限打转。 */
   attempts: number;
@@ -19,13 +18,23 @@ export interface TurnState {
   interrupted: boolean;
   /** 已开工(tool.started)的 tool_call_id。开工了却还在 pendingCalls 里 = 执行中途崩溃。 */
   startedCallIds: Set<string>;
+  /** 锚点之后最近一次环境快照的正文。runner 据此判断要不要追加新快照(内容没变就不追加)。 */
+  lastContext?: string;
 }
 
 export function fold(events: AgentEvent[], turnId: string): TurnState {
   let anchor = -1; let summary: string | undefined;
   events.forEach((e, i) => { if (e.kind === 'compaction.summary') { anchor = i; summary = String(e.payload.summary ?? ''); } });
 
-  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, startedCallIds: new Set() };
+  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, startedCallIds: new Set() };
+  // 摘要是对话里的一条消息,不进 system prompt:压缩前后 system + 工具定义这段前缀不变,缓存照常命中
+  if (summary) st.msgs.push({ role: 'user', content: `【此前对话摘要】${summary}` });
+  // 快照在日志里排在本 turn 的 user.message 之后(runner 开工时才追加),渲染时放到它前面:
+  // 最后一条 user 消息始终是用户原话。第一次请求在快照落盘之后才发出,所以两种顺序都只追加、不改写
+  const snapshots = new Map<string, string>();
+  for (let i = anchor + 1; i < events.length; i++) {
+    if (events[i].kind === 'context.snapshot') snapshots.set(events[i].turn_id, String(events[i].payload.text ?? ''));
+  }
   const resultSeen = new Set<string>();
 
   for (let i = anchor + 1; i < events.length; i++) {
@@ -35,9 +44,12 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
       case 'turn.started':
         if (e.turn_id === turnId) { st.status = 'running'; st.step = 0; st.pendingCalls = []; st.suspended = undefined; }
         break;
-      case 'user.message':
+      case 'user.message': {
+        const context = snapshots.get(e.turn_id);
+        if (context !== undefined) { st.msgs.push({ role: 'user', content: context }); st.lastContext = context; }
         st.msgs.push({ role: 'user', content: String(p.text ?? '') });
         break;
+      }
       case 'assistant.message': {
         // DeepSeek 思考模式契约:工具调用轮次的 reasoning_content 必须回传(无工具时 API 会忽略,恒传安全)
         st.msgs.push({ role: 'assistant', content: String(p.text ?? ''), reasoning_content: p.reasoning ? String(p.reasoning) : undefined, tool_calls: undefined });

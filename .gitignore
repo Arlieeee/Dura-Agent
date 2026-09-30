@@ -26,3 +26,4 @@ packages/bench/data/
 # Raw bench results (large, with full traces); latest.md / resilience.md are kept
 packages/bench/results/run-*.json
 packages/bench/results/report-*.md
+packages/bench/results/session-*.json

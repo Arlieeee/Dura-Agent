@@ -19,9 +19,8 @@ class RoleProvider implements ChatProvider {
   parentCalls = 0; childCalls = 0;
   constructor(private childGoal: string) {}
   async chat(msgs: ChatMsg[], _t: ToolSpec[]): Promise<ChatResult> {
-    const firstUser = msgs.find(m => m.role === 'user')?.content ?? '';
     const usage = { prompt_tokens: 10, completion_tokens: 5 };
-    if (firstUser.includes(this.childGoal)) {
+    if (msgs.some(m => m.role === 'user' && m.content.includes(this.childGoal))) {
       // 子 agent:先翻文件,再给结论
       const n = ++this.childCalls;
       if (n === 1) return { text: '', usage, tool_calls: [{ id: 'kid1', name: 'list_files', args: {} }] };

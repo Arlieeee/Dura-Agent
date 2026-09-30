@@ -7,7 +7,9 @@ export interface ChatProvider {
   name: string;
   /** signal 中止时应尽快 reject(断开底层流),不必返回部分结果。 */
   chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void, signal?: AbortSignal): Promise<ChatResult>;
-  summarize(text: string): Promise<string>;
+  /** 压缩对话。msgs 是主对话最后一次请求的原样前缀(含 system),tools 与之相同:
+   *  实现只应在末尾追加指令,不改前面任何字节,摘要请求才能命中前缀缓存。 */
+  summarize(msgs: ChatMsg[], tools: ToolSpec[]): Promise<string>;
 }
 
 export function makeProvider(): ChatProvider {

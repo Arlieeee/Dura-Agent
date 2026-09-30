@@ -63,7 +63,7 @@ test('挂起/恢复:turn.suspended → suspended;user.confirmation → 解除并
   assert.match(String(st.msgs.at(-1)?.content), /A/);
 });
 
-test('compaction 锚点:锚点前事件不进 msgs,summary 注入', () => {
+test('compaction 锚点:锚点前事件不进 msgs,摘要成为开头的一条消息', () => {
   const events = [
     ev('user.message', { text: '旧消息' }),
     ev('assistant.message', { step: 0, text: '旧回复' }),
@@ -72,8 +72,7 @@ test('compaction 锚点:锚点前事件不进 msgs,summary 注入', () => {
     ev('user.message', { text: '新消息' }, 'trn_2'),
   ];
   const st = fold(events, 'trn_2');
-  assert.equal(st.summary, '此前聊了旧话题');
-  assert.deepEqual(st.msgs, [{ role: 'user', content: '新消息' }]);
+  assert.deepEqual(st.msgs, [{ role: 'user', content: '【此前对话摘要】此前聊了旧话题' }, { role: 'user', content: '新消息' }]);
 });
 
 test('turn 维度隔离:他人 turn 的事件进 msgs 但不改本 turn 的 step/pending', () => {
@@ -142,4 +141,15 @@ test('user.interrupt 只标记本 turn;activeTurnId 找还没收尾的 turn', ()
   assert.equal(fold(events, 'trn_a').interrupted, false);
   assert.equal(activeTurnId(events), 'trn_b');
   assert.equal(activeTurnId([...events, ev('turn.finished', { reason: 'cancelled' }, 'trn_b')]), undefined);
+});
+
+test('环境快照渲染在本 turn 的用户原话之前;lastContext 取最近一条', () => {
+  const events = [
+    ev('turn.started', {}, 'trn_a'), ev('user.message', { text: '第一问' }, 'trn_a'), ev('context.snapshot', { text: '【工作区】a.txt' }, 'trn_a'),
+    ev('assistant.message', { step: 0, text: '答一' }, 'trn_a'), ev('turn.finished', { reason: 'stop' }, 'trn_a'),
+    ev('turn.started', {}, 'trn_b'), ev('user.message', { text: '第二问' }, 'trn_b'),
+  ];
+  const st = fold(events, 'trn_b');
+  assert.deepEqual(st.msgs.map(m => m.content), ['【工作区】a.txt', '第一问', '答一', '第二问']);
+  assert.equal(st.lastContext, '【工作区】a.txt');
 });
