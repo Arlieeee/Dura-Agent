@@ -234,7 +234,9 @@ Read this before enabling `bash`.
 | **LangChain / LangGraph** | Graph orchestration with explicit nodes and edges | No graph. Orchestration is one pure function, `decide(state) → command` — unit-testable and replayable. Complex topologies are on you |
 | **Temporal** | General-purpose durable execution | Same idea, narrower scope: agent semantics only, one less piece of infrastructure |
 
-> A cross-check worth noting: DeerFlow's docs mention *injecting placeholder tool results for dangling calls*, while we **strip** those orphans in `fold`. Two independent frameworks cornered by the same problem — a crash-orphaned `tool_call` with no result will 400 the next API request and poison the whole session. Different fixes, same unavoidable pothole. We froze it into [resilience scenario R3](./BENCHMARK.md).
+> A cross-check worth noting: DeerFlow's docs mention *injecting placeholder tool results for dangling calls*, while we **strip** those orphans in `fold` (the never-started kind; see below for the started kind). Two independent frameworks cornered by the same problem — a crash-orphaned `tool_call` with no result will 400 the next API request and poison the whole session. Different fixes, same unavoidable pothole. We froze it into [resilience scenario R3](./BENCHMARK.md).
+>
+> The nastier case is a call that **started but has no result**: the side effect happened, the result was never persisted. The runner appends `tool.started` before executing; on redelivery only tools declared replay-safe (read-only, whole-file writes, deterministic sub-tasks) re-run, and the rest get an `interrupted` result so the model verifies state first — resilience scenario R5.
 
 ## Documentation
 
