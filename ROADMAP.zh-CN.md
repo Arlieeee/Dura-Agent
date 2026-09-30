@@ -109,11 +109,12 @@ DeerFlow 的语义是"技能**激活后**才限定",而本项目还没有激活�
   要真正封死无工具基线,得做到 50k+ token 量级。
 - **真实第三方框架**:已接入 Pi 的 agent loop([harness/pi.ts](packages/bench/src/harness/pi.ts))。
   DeerFlow 是 Python/LangGraph 栈,接进来需要跨语言 runner,暂列为待评估。
-- **缓存命中没进成本模型**:DeepSeek 的 prompt 缓存读价便宜 50 倍
-  ($0.0028 vs $0.14 per M),但本仓库的 provider 只记 `prompt_tokens` 总数,
-  不区分命中部分。所以报告里的成本是**上界**。要算准需要 `Usage` 加
-  `cached_tokens` 字段并在 openai-compat 里读 `prompt_cache_hit_tokens`。
-  这件事值得做:harness 之间的请求前缀稳定性不同,缓存命中率可能是成本差异的主因,
-  而现在这个维度是瞎的。
+- ✅ **缓存命中进了成本模型**(2026-09-30):`Usage.cached_tokens` 读 DeepSeek 的 `prompt_cache_hit_tokens`,
+  报告按命中价 / 未命中价分开算,并新增缓存命中列。数据一接上就照出两个问题(前缀不稳定、无关技能占提示词),
+  改完 `my-agent` 成本/题 flash −13%、pro −7%,见 [BENCHMARK 第三轮](./BENCHMARK.zh-CN.md)。
+- **`my-agent` 在 v4-pro 上仍比 `react-min` 贵 28%**:多出来的是 `delegate` / `remember` / `recall` 的 schema、
+  工作方式规则和工作区清单。在饱和的任务集上它们买不到分,下一步要么在更难的任务上证明价值,要么按需上架。
+- **工具结果截断在 4000 字符**:省 token,但会丢信息(大文件、长日志)。更好的做法是超长结果落文件、上下文只留预览和路径。
+  现有任务集太小量不出差别,要等上下文压力大的任务集(SWE-bench,见下)。
   (踩过的坑:Pi 的 `usage.input` **不含**缓存命中部分,而我们取的是含缓存的
   `prompt_tokens`。口径不对齐时曾得出"Pi 省 4.4 倍 token"的错误结论。)

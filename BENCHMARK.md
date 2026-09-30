@@ -263,7 +263,7 @@ Status:
 - ✅ Data layer: 300 tasks fetched (`node scripts/fetch-datasets.mjs swebench`)
 - ✅ Grading per the official definition: `FAIL_TO_PASS` all passing **and** `PASS_TO_PASS` none broken → resolved. Before running tests, test files are `git checkout`'d back to their official state and `test_patch` re-applied — otherwise deleting an inconvenient assertion would "pass" the task
 - ✅ Sandbox: `Executor` + `ContainerWorkspace` ready
-- ⏳ Needs a docker daemon. `npm run bench:doctor` says exactly what's missing
+- ⏳ The official images are x86_64, one large image per instance — run them in a cloud x86 container rather than under emulation on an arm64 laptop. `npm run bench:doctor` says exactly what's missing
 
 ```bash
 npm run bench:doctor -w packages/bench
@@ -282,6 +282,62 @@ Three potholes, all of the "no error, wrong result" variety, all now documented 
 2. **Output truncation**: `run()`'s 16 KB cap is a **model-facing** measure (save tokens, avoid flooding), but it was also applied to internal file reads, quietly truncating files over 12 KB. Added a `maxOutput` parameter to separate the two uses.
 3. **Paths**: `ContainerWorkspace` only accepts POSIX absolute paths. A Windows path makes the drive letter look like a directory segment and trips a false "out of bounds". Now rejected at construction rather than surfacing later wearing a different mask.
 
+## Round three (2026-09-30): cache hits, prompt size, crash mid-tool
+
+> **The model changed, so these numbers don't compare directly with earlier rounds.** `deepseek-v4-flash` is retired and its name
+> is served by V4.1-Flash. This round uses `deepseek-flash` and `deepseek-v4-pro`, priced at official off-peak rates (peak doubles
+> all three, so ratios between harnesses hold). The report gains a **cache-hit** column: cached prompt tokens are priced at the
+> cache-read rate (50× cheaper), so earlier costs were only upper bounds.
+
+18 tasks × 4 harnesses × 2 models × 3 samples = 432 cells · maxSteps=12 · timeout=180s · thinking off · about **$0.40** total
+
+| Model | harness | Completion | Cache hit | LLM calls/task | Prompt tokens/task | Cost/task |
+|---|---|---:|---:|---:|---:|---:|
+| flash | `react-min` | **100.0%** | 83.9% | 5.31 | 8,772 | $0.00059 |
+| flash | `pi` | **98.9%** | 80.8% | 4.67 | 8,817 | $0.00060 |
+| flash | `my-agent` | **98.5%** | 82.5% | 4.69 | 10,534 | $0.00061 |
+| flash | `raw` | **92.6%** | 70.5% | 1.00 | 625 | $0.00023 |
+| v4-pro | `my-agent` | **100.0%** | 80.7% | 3.89 | 8,301 | $0.00201 |
+| v4-pro | `pi` | **100.0%** | 90.6% | 4.07 | 7,437 | $0.00150 |
+| v4-pro | `react-min` | **100.0%** | 87.8% | 4.39 | 6,569 | $0.00157 |
+| v4-pro | `raw` | **79.1%** | 91.2% | 1.00 | 624 | $0.00023 |
+
+### Two changes, measured
+
+The cache-hit data pointed at the problems; each fix is one change. Before and after ran **simultaneously** in two separate worktrees
+(same time window, same model), with only `my-agent`'s code differing:
+
+| `my-agent` | Before | ① stable prefix | ①+② scenario-scoped skills |
+|---|---:|---:|---:|
+| flash: cache hit from step 1 on | 85.5% | 87.8% | 87.7% |
+| flash: prompt tokens/task | 11,621 | 11,040 | 10,534 |
+| flash: cost/task | $0.00070 | $0.00063 | **$0.00061 (−13%)** |
+| v4-pro: cache hit from step 1 on | 85.9% | 88.4% | 87.4% |
+| v4-pro: prompt tokens/task | 8,732 | 8,754 | 8,301 |
+| v4-pro: cost/task | $0.00216 | $0.00219 | **$0.00201 (−7%)** |
+| Completion (flash / pro) | 100% / 100% | 100% / 98.1% | 98.5% / 100% |
+
+- **① Stable prefix.** The workspace listing and memory hint were injected only at step 0, so the system prompt changed from step 1
+  on: the server-side prefix cache missed, and the model stopped seeing the listing. The system prompt is now built once per runner.
+  Cache hits from step 1 on: **+2.3 / +2.5pt**. Smaller than expected, because DeepSeek matches common prefixes and the base prompt
+  kept hitting; only the part after the listing was lost.
+- **② Scenario-scoped skills.** Every coding call carried a writing skill that uses only `web_search` / `write_document`, neither of
+  which exists in coding mode. Tool narrowing already skipped such irrelevant skills; prompt injection didn't. With one shared
+  predicate, the coding system prompt drops from 648 to 407 characters.
+- **Completion didn't move**: 98.5–100%, within noise. Both flash misses are `constrain-02` ordering `nail` / `nut` the wrong way;
+  `raw` and `pi` each did the same once in this run. The model states "same quantity, alphabetical" and then writes it backwards.
+- **③ Crash mid-tool** (zero API cost, see R5 below): `tool.started` is appended before executing; on redelivery only tools declared
+  replay-safe re-run, and the rest get an `interrupted` result for the model to verify. With that crash injected, an append happens
+  once instead of twice; resilience goes from 4/4 to **5/5**.
+
+**The honest part:** on v4-pro `my-agent` still costs **28%** more than `react-min` (26% more prompt tokens per task). The extra is
+what `react-min` doesn't have: the `delegate` / `remember` / `recall` schemas, the working rules, the workspace listing. On this
+saturated task set they buy no score. Either prove them on harder tasks or mount them on demand; it's on the [ROADMAP](./ROADMAP.md).
+
+> Another **false conclusion manufactured by the bench itself**: on the first pass, `pi` scored 6.9% on flash. Not Pi's fault:
+> pi-ai's model table doesn't know the renamed `deepseek-flash`, so every cell threw before its first call. Fixed, it scores 98.9%.
+> A harness making zero LLM calls looks exactly like a weak harness in the report.
+
 ## Resilience: what fair weather can't measure
 
 On the scoreboard, a 20-line while loop and a full harness score about the same — because when nothing fails, they genuinely are the same. Event sourcing only shows its value under failure. Hence a separate fault-injection suite (zero API cost, runs in seconds):
@@ -289,10 +345,11 @@ On the scoreboard, a 20-line while loop and a full harness score about the same 
 | Scenario | Injected fault | `my-agent` | `react-min` |
 |---|---|:-:|:-:|
 | R1 Crash recovery | Process dies at step 3 | ✅ Resumes from the break, 3 writes, not one extra | ❌ No state to recover; restart = redo, 5 writes |
-| R2 Duplicate delivery | Same turn kicked twice concurrently | ✅ Deterministic IDs dedupe, 1 event written | ❌ Both run fully, side effect happens twice |
+| R2 Duplicate delivery | Same turn kicked twice concurrently (fresh `tool_call_id` per LLM call) | ✅ Per-thread serialization: the second runner sees `finished` and no-ops, 1 event written | ❌ Both run fully, side effect happens twice |
 | R3 Dangling call | Inject an orphan `tool_call` with no result | ✅ Projection cleanup strips it, request stays clean | ❌ Context is memory-only; a crash loses everything |
 | R4 Context growth | 12-turn conversation | ✅ Compaction anchor fires, message count bounded | ❌ Linear growth until the context window blows |
-| | **Total** | **4/4** | **0/4** |
+| R5 Crash mid-tool | Process dies after the tool ran, before `tool.result` is persisted | ✅ Intent recorded first; bash is not replay-safe → an `interrupted` result lets the model verify, the append happens once | ❌ Starts over, the append happens twice |
+| | **Total** | **5/5** | **0/5** |
 
 `raw` isn't in this table: it has no multi-step execution, so mid-run crashes don't apply — which is itself its ceiling.
 
