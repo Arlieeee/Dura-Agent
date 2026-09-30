@@ -7,7 +7,7 @@
 |---|---|---|:-:|---|
 | R1 崩溃恢复 | 执行中途进程死掉,重投后能否接着干完且不重复副作用 | `my-agent` | ✅ | 崩溃于第 3 次 LLM 调用(此前已写 2 个文件);记 1 次 turn.error 后重投 → tool.call=3 result=3 文件=log.txt,log2.txt,log3.txt 收敛完成=true |
 | R1 崩溃恢复 | 执行中途进程死掉,重投后能否接着干完且不重复副作用 | `react-min` | ❌ | 崩溃后无状态可恢复(模拟进程崩溃(网络中断/OOM/kill -9));重启=从头重做,同样的写入执行了 5 次而非 3 次 |
-| R2 重复投递 | 同一 turn 被并发 kick 两次,事件会不会写两遍(重复扣费/重复副作用) | `my-agent` | ✅ | 并发两次执行 → tool.call 事件 1 条、turn.finished 1 条(确定性 ID 去重生效) |
+| R2 重复投递 | 同一 turn 被并发 kick 两次,事件会不会写两遍(重复扣费/重复副作用) | `my-agent` | ✅ | 并发两次执行(每次 LLM 给新 tool_call_id)→ tool.call 事件 1 条、turn.finished 1 条(同 thread 串行生效) |
 | R2 重复投递 | 同一 turn 被并发 kick 两次,事件会不会写两遍(重复扣费/重复副作用) | `react-min` | ❌ | 无事件日志、无幂等键:两次投递各自完整执行一遍,副作用发生 2 次 |
 | R3 悬空调用 | 崩溃残留的无 result 孤儿 tool_call 会不会被喂回 API(400 毒死整个会话) | `my-agent` | ✅ | fold 的投影清洗剔除了孤儿 call,请求干净 |
 | R3 悬空调用 | 崩溃残留的无 result 孤儿 tool_call 会不会被喂回 API(400 毒死整个会话) | `react-min` | ❌ | 不适用:上下文只在内存里,崩溃即全丢。没有残留可清洗,也没有历史可恢复 |

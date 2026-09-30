@@ -6,7 +6,9 @@ export type EventKind =
   | 'turn.suspended' | 'user.confirmation' | 'turn.finished' | 'compaction.summary'
   // 可重试失败的留痕:不终结 turn,只记一次尝试。终结用 turn.finished{reason:'error'}。
   // 区分这两者是收敛式重跑的前提——写了 turn.finished 的 turn,重投时 fold 只会得到 noop。
-  | 'turn.error';
+  | 'turn.error'
+  // 用户喊停。是持久事实而不是进程内信号:崩溃重投后 fold 照样看得见,turn 收敛到 cancelled。
+  | 'user.interrupt';
 
 export type FinishReason = 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'max-steps';
 

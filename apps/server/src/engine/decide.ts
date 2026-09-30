@@ -7,7 +7,7 @@ export type Command =
   | { type: 'call_llm' }
   | { type: 'execute_tools'; calls: ToolCallReq[] }   // 一批;长度 1 即串行
   | { type: 'suspend'; call: ToolCallReq }
-  | { type: 'idle'; reason: 'stop' | 'max-steps' }
+  | { type: 'idle'; reason: 'stop' | 'max-steps' | 'cancelled' }
   | { type: 'noop' };            // 已挂起/已结束:什么都不做,等新事件
 
 /** 单 turn 最多几轮 LLM 调用。评测要固定 budget,所以可覆盖(MAX_STEPS env 或显式传参)。 */
@@ -15,6 +15,8 @@ export const DEFAULT_MAX_STEPS = Number(process.env.MAX_STEPS ?? 12);
 
 export function decide(state: TurnState, maxSteps = DEFAULT_MAX_STEPS): Command {
   if (state.status === 'finished') return { type: 'noop' };
+  // 先于挂起判断:挂起中的 turn 也要能被喊停,否则只能等用户回答
+  if (state.interrupted) return { type: 'idle', reason: 'cancelled' };
   if (state.suspended) return { type: 'noop' };                    // 挂起中,等 user.confirmation 事件
   if (state.step >= maxSteps) return { type: 'idle', reason: 'max-steps' };
 

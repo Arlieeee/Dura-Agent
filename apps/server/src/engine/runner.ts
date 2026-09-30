@@ -46,9 +46,39 @@ export interface RunnerDeps {
   memoryDir?: string | null;
   /** 命令执行环境:'local'(默认)| 'docker'。也可直接传一个现成的执行器复用容器。 */
   sandbox?: 'local' | 'docker' | Executor;
+  /** 父 turn 的取消信号(子 agent 用):父 turn 被喊停,子 turn 跟着停。 */
+  signal?: AbortSignal;
 }
 
-export async function runTurn(deps: RunnerDeps, threadId: string, turnId: string): Promise<void> {
+/** 进程内正在跑的 turn → 取消句柄。cancelTurn 靠它打断 LLM 流。 */
+const liveTurns = new Map<string, AbortController>();
+
+/** 喊停:先落 user.interrupt(持久事实,崩溃重投后照样生效),再打断进程内正在跑的流。
+ *  重复喊停 = 同一个确定性 ID,no-op。没有 runner 在跑的 turn(pending / suspended)
+ *  要由调用方再 kick 一次,让它收敛到 cancelled。 */
+export async function cancelTurn(store: EventStore, threadId: string, turnId: string): Promise<void> {
+  await store.append({ id: eventId(turnId, 'user.interrupt', 'cancel'), thread_id: threadId, turn_id: turnId, kind: 'user.interrupt', payload: {} });
+  liveTurns.get(turnId)?.abort();
+}
+
+/** 同一 thread 同一时刻只跑一个 runner。
+ *  确定性 ID 只能去重"同样的事件";两个 runner 各调一次 LLM 会拿到**不同的** tool_call_id,
+ *  两份调用都会落盘、副作用执行两次 —— 这是 ID 去重兜不住的。 */
+// ponytail: 进程内锁,前提是 README 写明的单实例部署;多实例时换 Redis SET NX PX + 续期
+const threadLocks = new Map<string, Promise<void>>();
+function withThreadLock(threadId: string, fn: () => Promise<void>): Promise<void> {
+  const run = (threadLocks.get(threadId) ?? Promise.resolve()).then(fn);
+  const tail = run.catch(() => {});                 // 前一个失败不能连累排队的下一个
+  threadLocks.set(threadId, tail);
+  void tail.then(() => { if (threadLocks.get(threadId) === tail) threadLocks.delete(threadId); });
+  return run;
+}
+
+export function runTurn(deps: RunnerDeps, threadId: string, turnId: string): Promise<void> {
+  return withThreadLock(threadId, () => runTurnLocked(deps, threadId, turnId));
+}
+
+async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string): Promise<void> {
   const { store, provider } = deps;
   const canSpawn = deps.enableSubagents !== false && depthOf(threadId) < MAX_DELEGATE_DEPTH;
   // 先算出本场景本来有哪些工具,再让技能在这个范围内收窄 —— 与本场景无关的技能不参与
@@ -74,9 +104,20 @@ export async function runTurn(deps: RunnerDeps, threadId: string, turnId: string
   const hb = setInterval(() => {
     void store.upsertTurn({ id: turnId, thread_id: threadId, heartbeat_at: Date.now() }).catch(() => {});
   }, 5_000);
+  const ctl = new AbortController();
+  liveTurns.set(turnId, ctl);
+  const onParentAbort = () => void cancelTurn(store, threadId, turnId).catch(() => {});
+  deps.signal?.addEventListener('abort', onParentAbort, { once: true });
+  if (deps.signal?.aborted) onParentAbort();
 
   try {
-    await runLoop();
+    try {
+      await runLoop();
+    } catch (err) {
+      // 喊停打断的是流,不是故障:不记 turn.error。interrupt 已在日志里,再转一圈 decide 就收尾成 cancelled
+      if (!ctl.signal.aborted) throw err;
+      await runLoop();
+    }
   } catch (err: any) {
     const message = String(err?.message ?? err).slice(0, 500);
     const attempts = fold(await store.load(threadId), turnId).attempts;
@@ -98,6 +139,8 @@ export async function runTurn(deps: RunnerDeps, threadId: string, turnId: string
     return;
   } finally {
     clearInterval(hb);
+    liveTurns.delete(turnId);
+    deps.signal?.removeEventListener('abort', onParentAbort);
     if (ownsExecutor) await executor.dispose().catch(() => {});
   }
 
@@ -133,7 +176,7 @@ export async function runTurn(deps: RunnerDeps, threadId: string, turnId: string
             else if (d.kind === 'reasoning') emit({ type: 'reasoning-delta', step, delta: d.delta });
             else if (d.kind === 'tool-start') emit({ type: 'tool-input-start', step, tool_call_id: d.id, tool_name: d.name });
             else if (d.kind === 'tool-args') emit({ type: 'tool-input-delta', tool_call_id: d.id, tool_name: d.name, chars: d.chars });
-          });
+          }, ctl.signal);
 
         // 重放识别:重投后模型会照着 fold 出的历史把已做过的步骤再说一遍。这些步骤的 tool.call
         // 都会幂等 no-op,若还给它写一条 assistant.message,日志里就多出一条光杆消息,还白占一格 step 预算。
@@ -155,7 +198,7 @@ export async function runTurn(deps: RunnerDeps, threadId: string, turnId: string
           runTool(call.name, call.args, {
             store, threadId, turnId, workspace, allowedTools: allow, memory, executor,
             progress: data => emit({ type: 'tool-progress', tool_call_id: call.id, data }),
-            spawn: canSpawn ? makeSpawn(deps, threadId, workspace, call.id, executor) : undefined,
+            spawn: canSpawn ? makeSpawn({ ...deps, signal: ctl.signal }, threadId, workspace, call.id, executor) : undefined,
           })));
         // 落盘严格按模型给出的顺序,不按完成顺序 —— 否则同一批的日志顺序随机,fold 就不确定了
         for (let i = 0; i < cmd.calls.length; i++) {

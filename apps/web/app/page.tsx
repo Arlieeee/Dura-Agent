@@ -25,6 +25,7 @@ function Ic({ n, s = 13 }: { n: string; s?: number }) {
     logout: <><path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2" /><path d="M9 12h12l-3 -3M18 15l3 -3" /></>,
     panel: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M9 4v16" /></>,
     up: <path d="M12 19V5M5 12l7 -7l7 7" />,
+    stop: <rect x="7" y="7" width="10" height="10" rx="1.5" />,
   };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
     strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, verticalAlign: '-2px' }}>{P[n]}</svg>;
@@ -472,6 +473,13 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
     });
   }
 
+  async function stop() {
+    if (!threadId) return;
+    await api(`/api/threads/${threadId}/cancel`, { method: 'POST', body: '{}' });
+    // 流式中的 turn 会从流里收到 finish(cancelled);挂起中的没有打开的流,直接按日志重建
+    if (status === 'waiting-user') { setStatus('ready'); void coldLoad(threadId); }
+  }
+
   /* ---------- 渲染 ---------- */
   const lastAsst = [...msgs].reverse().find(m => m.role === 'assistant');
   /** 落款式状态文字(无指示灯):就绪/候示/思考中/调用中/书写中 */
@@ -582,7 +590,9 @@ function Main({ auth, onLogout }: { auth: Auth; onLogout: () => void }) {
           <div className="inbox">
             <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && send()}
                    placeholder="发消息，或描述一件要办的事…" disabled={status !== 'ready'} />
-            <button className="send" onClick={send} disabled={status !== 'ready'} aria-label="发送"><Ic n="up" s={16} /></button>
+            {status === 'ready'
+              ? <button className="send" onClick={send} aria-label="发送"><Ic n="up" s={16} /></button>
+              : <button className="send" onClick={stop} aria-label="停止"><Ic n="stop" s={16} /></button>}
           </div>
           <div className="hint">Dura-Agent 可能出错，请核查关键结论 · Enter 发送</div>
         </footer>

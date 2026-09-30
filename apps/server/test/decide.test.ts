@@ -6,7 +6,7 @@ import type { TurnState } from '../src/engine/fold.js';
 
 const base = (over: Partial<TurnState> = {}): TurnState => ({
   threadId: 'thr_t', turnId: 'trn_t', status: 'running',
-  msgs: [], pendingCalls: [], step: 0, eventCount: 0, attempts: 0, seenCallIds: new Set(), ...over,
+  msgs: [], pendingCalls: [], step: 0, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, ...over,
 });
 
 test('无消息 → idle stop', () => {
@@ -91,4 +91,12 @@ test('step 达到上限 → idle max-steps', () => {
 test('assistant 纯文本收尾 → idle stop', () => {
   const cmd = decide(base({ msgs: [{ role: 'user', content: 'q' }, { role: 'assistant', content: '答' }] }));
   assert.deepEqual(cmd, { type: 'idle', reason: 'stop' });
+});
+
+test('被喊停 → idle cancelled,挂起中也一样', () => {
+  const call = { id: 'c1', name: 'ask_user', args: { question: '?' } };
+  assert.deepEqual(decide(base({ interrupted: true, msgs: [{ role: 'user', content: 'q' }] })), { type: 'idle', reason: 'cancelled' });
+  assert.deepEqual(decide(base({ interrupted: true, suspended: { tool_call_id: 'c1', name: 'ask_user', question: '?' }, pendingCalls: [call] })),
+    { type: 'idle', reason: 'cancelled' });
+  assert.deepEqual(decide(base({ interrupted: true, status: 'finished' })), { type: 'noop' });
 });

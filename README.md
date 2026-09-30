@@ -101,6 +101,8 @@ RUNNER_MODE=bullmq REDIS_URL=redis://localhost:6379 npm run dev:server
 | Heartbeat + sweeper + re-dispatch | `heartbeat_at` + timer | `queue.ts` |
 | Live projection over SSE | bus + streaming `/turns` | `bus.ts`, `index.ts` |
 | Suspend / resume | `turn.suspended` event + `/continue` | `runner.ts`, `fold.ts` |
+| Cancel | durable `user.interrupt` event + `AbortSignal` on the stream + `/cancel`; cascades to sub-agents | `runner.ts` (cancelTurn), `decide.ts` |
+| One turn per thread | admission gate (unfinished turn → 409) + in-process thread lock in the runner | `index.ts`, `runner.ts` (withThreadLock) |
 | Context compaction | `compaction.summary` anchor event | `runner.ts` |
 | Pluggable tools | registry with `chat` / `coding` / `memory` groups | `tools/index.ts` |
 | Task isolation | per-thread workspace + path-escape guard | `workspace.ts` |

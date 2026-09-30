@@ -5,7 +5,8 @@ import { MockProvider } from './mock.js';
 
 export interface ChatProvider {
   name: string;
-  chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void): Promise<ChatResult>;
+  /** signal 中止时应尽快 reject(断开底层流),不必返回部分结果。 */
+  chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void, signal?: AbortSignal): Promise<ChatResult>;
   summarize(text: string): Promise<string>;
 }
 

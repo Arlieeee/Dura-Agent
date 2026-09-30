@@ -8,6 +8,7 @@
  *   R4 上下文膨胀:长会话有没有压缩锚点,还是一路涨到爆
  * 判定全是确定性断言,不看模型发挥。 */
 import { mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ChatMsg, ChatResult, ChatDelta, ToolSpec } from '../../../packages/protocol/src/index.js';
@@ -28,7 +29,8 @@ type Act = { tool: string; args: Record<string, unknown> } | { text: string } | 
 class ScriptedProvider implements ChatProvider {
   name = 'scripted';
   calls = 0;
-  constructor(private script: Act[]) {}
+  /** freshIds:每次调用给新 tool_call_id,和真实模型一样。默认按步数给确定性 id。 */
+  constructor(private script: Act[], private freshIds = false) {}
   async chat(_m: ChatMsg[], _t: ToolSpec[], _d: (d: ChatDelta) => void): Promise<ChatResult> {
     const act = this.script[Math.min(this.calls, this.script.length - 1)];
     this.calls++;
@@ -37,7 +39,7 @@ class ScriptedProvider implements ChatProvider {
     return {
       text: '', usage: { prompt_tokens: 10, completion_tokens: 5 },
       // 确定性 id:重跑时同一步产生同一个 tool_call_id,幂等才有意义
-      tool_calls: [{ id: `call_step${this.calls}`, name: act.tool, args: act.args }],
+      tool_calls: [{ id: this.freshIds ? `call_${randomUUID().slice(0, 8)}` : `call_step${this.calls}`, name: act.tool, args: act.args }],
     };
   }
   async summarize(text: string) { return '【摘要】' + text.slice(0, 100); }
@@ -140,10 +142,12 @@ async function r2MyAgent(): Promise<ResilienceResult> {
     await store.append({ id: eventId(turnId, 'user.message', 'i'), thread_id: threadId, turn_id: turnId, kind: 'user.message', payload: { text: '记一笔' } });
 
     const script: Act[] = [{ tool: 'write_file', args: { path: 'ledger.txt', content: 'charged\n' } }, { text: '已记账' }];
-    // 同一个 turn 被投递两次(重启重投 / 双 worker 抢同一条消息)
+    // 同一个 turn 被投递两次(重启重投 / 双 worker 抢同一条消息)。
+    // 两次 LLM 调用给的 tool_call_id 不同(真实模型就是这样),确定性事件 ID 去不了这种重 ——
+    // 要靠同 thread 串行:第二个 runner 等第一个收尾后 fold 出 finished,直接 noop。
     await Promise.all([
-      runTurn({ store, provider: new ScriptedProvider(script), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId),
-      runTurn({ store, provider: new ScriptedProvider(script), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId),
+      runTurn({ store, provider: new ScriptedProvider(script, true), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId),
+      runTurn({ store, provider: new ScriptedProvider(script, true), toolset: 'coding', workspace: ws, maxSteps: 6 }, threadId, turnId),
     ]);
 
     const events = await store.load(threadId);
@@ -153,7 +157,7 @@ async function r2MyAgent(): Promise<ResilienceResult> {
     return {
       scenario: 'R2 重复投递', probe: '同一 turn 被并发 kick 两次,事件会不会写两遍(重复扣费/重复副作用)', harnessId: 'my-agent',
       passed,
-      detail: `并发两次执行 → tool.call 事件 ${calls.length} 条、turn.finished ${finishes.length} 条(确定性 ID 去重${passed ? '生效' : '失效'})`,
+      detail: `并发两次执行(每次 LLM 给新 tool_call_id)→ tool.call 事件 ${calls.length} 条、turn.finished ${finishes.length} 条(同 thread 串行${passed ? '生效' : '失效'})`,
     };
   });
 }
