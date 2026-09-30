@@ -19,6 +19,7 @@ import { openWorkspace } from '../../../apps/server/src/workspace.js';
 import { loadLocalEnv } from '../../../apps/server/src/env.js';
 import { hardTasks } from './tasks/hard.js';
 import { withTimeout } from './harness/raw.js';
+import { withSalt } from './provider.js';
 
 const TURNS = [
   '先熟悉一下这个项目:services/ 下有哪些子系统,各自的 api.js 导出了哪些函数?简要列出。另外记住:这个项目的发布负责人是 Alice。',
@@ -39,7 +40,7 @@ class MeteredProvider extends OpenAICompatProvider {
   calls: Call[] = [];
   private summarizing = false;
   async chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void, signal?: AbortSignal): Promise<ChatResult> {
-    const out = await super.chat(msgs, tools, onDelta, signal);
+    const out = await super.chat(withSalt(msgs), tools, onDelta, signal);
     const u = out.usage;
     this.calls.push({ kind: this.summarizing ? 'summarize' : 'chat', prompt: u?.prompt_tokens ?? 0, cached: u?.cached_tokens ?? 0, completion: u?.completion_tokens ?? 0 });
     return out;
@@ -128,6 +129,7 @@ export function renderSessions(results: SessionResult[]): string {
 
 async function main() {
   loadLocalEnv();
+  process.env.BENCH_RUN_SALT ??= `[bench ${Math.random().toString(36).slice(2, 10)}]`;
   process.env.ENABLE_BASH = '1';
   const arg = (name: string) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : undefined; };
   const models = (arg('models') ?? 'deepseek-flash').split(',').map(s => s.trim());
