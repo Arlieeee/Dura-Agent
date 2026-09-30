@@ -3,7 +3,7 @@
  *   npm run bench                              # 全量三档对照
  *   npm run bench -- --tasks edit-01,data-01   # 挑题(支持 id 前缀与 category)
  *   npm run bench -- --harness raw,my-agent    # 挑档
- *   npm run bench -- --models deepseek-v4-flash,deepseek-v4-pro
+ *   npm run bench -- --models deepseek-flash,deepseek-v4-pro
  *   npm run bench -- --steps 8 --timeout 120 --concurrency 4 --traces
  */
 import { mkdir, writeFile } from 'node:fs/promises';
