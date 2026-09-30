@@ -38,7 +38,11 @@ export const piHarness: Harness = {
 
     const models = createModels();
     models.setProvider(deepseekProvider());
-    const model = models.getModel('deepseek', ctx.model);
+    // 模型表跟不上改名(deepseek-v4-flash → deepseek-flash):认不出时借旧名的模板,只换 id。
+    // 请求里发的就是 id,端点与其它三档一致;旧名本就由同一个模型承接
+    const known = models.getModel('deepseek', ctx.model);
+    const legacy = models.getModel('deepseek', 'deepseek-v4-flash');
+    const model = known ?? (ctx.model === 'deepseek-flash' && legacy ? { ...legacy, id: ctx.model } : undefined);
     if (!model) throw new Error(`Pi 不认识模型 ${ctx.model}(它的 deepseek provider 只登记了已知模型)`);
 
     const ws = await openWorkspace(ctx.workspaceDir);
