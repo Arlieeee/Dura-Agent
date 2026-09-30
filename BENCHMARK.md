@@ -334,9 +334,90 @@ The cache-hit data pointed at the problems; each fix is one change. Before and a
 what `react-min` doesn't have: the `delegate` / `remember` / `recall` schemas, the working rules, the workspace listing. On this
 saturated task set they buy no score. Either prove them on harder tasks or mount them on demand; it's on the [ROADMAP](./ROADMAP.md).
 
+> **Round-four correction:** this 28% was measured unsalted, and `react-min` rode leftover cache from earlier runs; salted, the three harnesses are level on pro. See round four.
+
 > Another **false conclusion manufactured by the bench itself**: on the first pass, `pi` scored 6.9% on flash. Not Pi's fault:
 > pi-ai's model table doesn't know the renamed `deepseek-flash`, so every cell threw before its first call. Fixed, it scores 98.9%.
 > A harness making zero LLM calls looks exactly like a weak harness in the report.
+
+## Round four (2026-09-30): append-only requests, the cache discipline of DeepSeek Harness
+
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`) reports 97–99% cache hits on long sessions. The
+mechanism is a rule in its engineering standard rather than a trick: every package that touches model context documents its
+"KV Cache effect", i.e. whether it is append-only, prefix-stable, replacing, or an independent request. Auditing this project
+against that rule started with probing where DeepSeek's cache boundaries actually are:
+
+| Probe (two requests, the second changes one thing) | Cached on the second |
+|---|---:|
+| Workspace listing at the end of the system prompt; change only the listing | **0** |
+| System unchanged; listing in the user message after it | 1,280 |
+| Summary request: replay + append an instruction, with `tool_choice: 'none'` | **0** (tool schemas stop being rendered, the prefix changes) |
+| Same, without `tool_choice` | 1,280 |
+
+**DeepSeek caches at message boundaries, not arbitrary token prefixes**: change one character of the system message and the whole
+system prompt plus the tool schemas after it miss. This project kept the workspace listing, memory and compaction summary in the
+system prompt, so every new task and every post-compaction turn started cold. The changes:
+
+- The system prompt is static (byte-identical for a given tool set).
+- The workspace listing / memory is a `context.snapshot` event in the log, rendered as a user message before the turn's own
+  message; at most one per turn, appended only when its content changed. **It is a fact in the log, so redelivery replays it byte
+  for byte**; event sourcing helps here for free.
+- The compaction summary is a message after the anchor, not system text.
+- The summary request replays the conversation's exact prefix (same system, same tools) and only appends an instruction; no
+  `tool_choice`. No summary, no compaction.
+- A unit test pins the invariant: **every request is an append-only extension of the previous one**, within and across turns.
+
+### Fix the measurement first: salt every run
+
+The first comparison said "after is 14% pricier on pro". Not the code's fault: the provider cache lives for hours, the "before"
+code was byte-identical to a run an hour earlier and hit even on step 0, while "after" had fresh prefixes with no warm cache.
+Every run now prefixes the system message with a random salt: tasks within a run still share the system prompt and tool schemas
+(as in production), runs share nothing. All numbers below are salted.
+
+### Single-task bench (`my-agent`, 18 tasks × 3 samples, before / after run simultaneously)
+
+| | Cache hit | Cost/task | Completion |
+|---|---:|---:|---:|
+| flash before → after | 81.6% → **86.4%** | $0.00060 → **$0.00049 (−18%)** | 100% → 98.8% |
+| v4-pro before → after | 80.9% → **89.1%** | $0.00199 → **$0.00164 (−18%)** | 99.3% → 100% |
+
+### Session bench (9 development requests, ~3 compactions, 3 sessions each)
+
+The single-task bench runs one turn per cell, so it never exercises "across turns + compaction". New `npm run bench:session` runs
+9 real requests on one thread (explore → search → add comments → write a README → cross-file rename → count lines → self-check →
+CHANGELOG), meters **every** LLM call including summaries, and ends by asking for a fact from turn 1 to check compaction kept it.
+
+| | Total hit | Summary-call hit | Cost/session | Checks |
+|---|---:|---:|---:|---:|
+| flash before → after | 73.9% → **86.8%** | 0% → **94.5%** | $0.00510 → **$0.00444 (−13%)** | 12/12 → 12/12 |
+| v4-pro before → after | 73.1% → **86.9%** | 0% → **96.4%** | $0.01893 → **$0.01599 (−16%)** | 12/12 → 12/12 |
+
+Prompt tokens per session actually rose 15–20%: the summary call now carries the whole conversation (before, each message was cut
+to 300 characters). Nearly all of the extra hits the cache, so cost still fell.
+
+### Four-harness comparison (salted, 432 cells, about $0.38)
+
+| Model | harness | Completion | Cache hit | LLM calls/task | Prompt tokens/task | Cost/task |
+|---|---|---:|---:|---:|---:|---:|
+| flash | `my-agent` | **98.9%** | **86.8%** | 4.30 | 9,348 | **$0.00048** |
+| flash | `pi` | **100.0%** | 85.1% | 4.61 | 8,526 | $0.00051 |
+| flash | `react-min` | **99.3%** | 81.7% | 4.93 | 7,845 | $0.00057 |
+| flash | `raw` | **89.3%** | 37.0% | 1.00 | 634 | $0.00018 |
+| v4-pro | `my-agent` | **100.0%** | **88.6%** | 3.93 | 8,454 | $0.00163 |
+| v4-pro | `pi` | **98.1%** | 87.9% | 4.13 | 7,485 | $0.00162 |
+| v4-pro | `react-min` | **100.0%** | 86.4% | 4.50 | 6,896 | $0.00165 |
+| v4-pro | `raw` | **90.6%** | 43.1% | 1.00 | 633 | $0.00046 |
+
+`my-agent` still sends the most prompt tokens per task (more tools, more rules), but it has the highest cache hit rate: cheapest
+on flash, level with the others on pro.
+
+**Two honest caveats:**
+- Round three's "28% pricier than `react-min` on pro" was measured **unsalted**: `react-min`'s requests were byte-identical to
+  earlier runs and rode their leftover cache, while `my-agent` changed its requests every round. How much of that 28% was an
+  artifact and how much this round removed can no longer be separated.
+- This is still short of dsh's 97–99%. The ceiling is set by "new tokens per request / request length": sessions here are a few
+  thousand to ten thousand tokens, so one tool output is several percent; dsh's numbers come from sessions of tens of thousands of
+  tokens. The remaining misses are essentially new content (tool output, the next question, a post-compaction summary).
 
 ## Resilience: what fair weather can't measure
 
@@ -360,6 +441,9 @@ On the scoreboard, a 20-line while loop and a full harness score about the same 
 ```bash
 # Zero cost: fault injection, no API calls at all
 npm run bench:resilience -w packages/bench
+
+# 9-turn session through compaction, metering every call's cache hits (needs an API key)
+npm run bench:session -w packages/bench -- --models deepseek-flash,deepseek-v4-pro --repeat 3
 
 # Environment check — what can this machine run?
 npm run bench:doctor -w packages/bench

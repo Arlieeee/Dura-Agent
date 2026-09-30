@@ -18,7 +18,8 @@
 | ask_user 挂起/恢复 | `turn.suspended` 事件 + `/continue` | `runner.ts`、`fold.ts` |
 | 喊停 | `user.interrupt` 持久事件 + `AbortSignal` 打断流 + `/cancel`;连带子 agent | `runner.ts`(cancelTurn)、`decide.ts` |
 | 同 thread 串行 | 准入门禁(未收尾的 turn → 409)+ runner 进程内 thread 锁 | `index.ts`、`runner.ts`(withThreadLock) |
-| compaction 摘要锚点 | `compaction.summary` 事件 | `runner.ts`(maybeCompact) |
+| compaction 摘要锚点 | `compaction.summary` 事件;摘要请求原样重放主对话前缀,只追加指令 | `runner.ts`(maybeCompact) |
+| 请求只追加 | system 纯静态;工作区清单 / 记忆是 `context.snapshot` 事件,渲染成 user 消息 —— 每个请求都是上一个请求的延伸(有单测) | `prompt.ts`、`fold.ts` |
 | 可插拔工具网关 | 工具注册表(chat / coding / memory 三组)+ 只读工具并发执行 | `tools/index.ts` |
 | 任务隔离沙箱 | per-thread 工作区 + 路径逃逸防护 | `workspace.ts` |
 | subagent 委派 | `delegate` 工具:子 agent = 另一个 thread 里的普通 turn | `tools/delegate.ts` |
@@ -128,10 +129,11 @@ curl http://localhost:8787/healthz            # {"ok":true,...}
 ## 测试与评测
 
 ```bash
-npm test                                       # 引擎单测:fold/decide/auth/工具层(node:test,34 用例)
-npm test -w packages/bench                     # 评测 oracle 自测(39 断言:标准解满分 / 空手扣分 / 作弊判 0)
+npm test                                       # 引擎单测:fold/decide/auth/工具层/turn 控制面(node:test,78 用例)
+npm test -w packages/bench                     # 评测 oracle 自测(41 断言:标准解满分 / 空手扣分 / 作弊判 0)
 npm run bench:resilience -w packages/bench     # 故障注入对比,零 API 成本
-npm run bench -w packages/bench -- --repeat 5  # 三档 harness 全量跑分(需 API key)
+npm run bench -w packages/bench -- --repeat 5  # 四档 harness 全量跑分(需 API key)
+npm run bench:session -w packages/bench        # 9 轮会话、跨压缩,记录每次调用的缓存命中(需 API key)
 ```
 
 端到端测试记录见 [TESTING.md](./TESTING.md)(三轮:API 48 断言 / UI 全场景 / 崩溃演练与容器化实测)。
