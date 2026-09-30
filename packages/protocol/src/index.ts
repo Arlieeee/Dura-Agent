@@ -8,7 +8,9 @@ export type EventKind =
   // 区分这两者是收敛式重跑的前提——写了 turn.finished 的 turn,重投时 fold 只会得到 noop。
   | 'turn.error'
   // 用户喊停。是持久事实而不是进程内信号:崩溃重投后 fold 照样看得见,turn 收敛到 cancelled。
-  | 'user.interrupt';
+  | 'user.interrupt'
+  // 工具开工留痕,先于执行落盘。有它没 result = 执行到一半进程没了,副作用可能已经发生。
+  | 'tool.started';
 
 export type FinishReason = 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'max-steps';
 

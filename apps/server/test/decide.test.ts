@@ -6,7 +6,7 @@ import type { TurnState } from '../src/engine/fold.js';
 
 const base = (over: Partial<TurnState> = {}): TurnState => ({
   threadId: 'thr_t', turnId: 'trn_t', status: 'running',
-  msgs: [], pendingCalls: [], step: 0, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, ...over,
+  msgs: [], pendingCalls: [], step: 0, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false, startedCallIds: new Set(), ...over,
 });
 
 test('无消息 → idle stop', () => {
@@ -99,4 +99,12 @@ test('被喊停 → idle cancelled,挂起中也一样', () => {
   assert.deepEqual(decide(base({ interrupted: true, suspended: { tool_call_id: 'c1', name: 'ask_user', question: '?' }, pendingCalls: [call] })),
     { type: 'idle', reason: 'cancelled' });
   assert.deepEqual(decide(base({ interrupted: true, status: 'finished' })), { type: 'noop' });
+});
+
+test('开工了没结果:有副作用的 → interrupt_tools;能安全重跑的 → 照常执行;没开工的 → 照常执行', () => {
+  const bash = { id: 'b1', name: 'bash', args: { command: 'echo x >> f' } };
+  const write = { id: 'w1', name: 'write_file', args: { path: 'a', content: 'x' } };
+  assert.deepEqual(decide(base({ pendingCalls: [bash], startedCallIds: new Set(['b1']) })), { type: 'interrupt_tools', calls: [bash] });
+  assert.deepEqual(decide(base({ pendingCalls: [write], startedCallIds: new Set(['w1']) })), { type: 'execute_tools', calls: [write] });
+  assert.deepEqual(decide(base({ pendingCalls: [bash] })), { type: 'execute_tools', calls: [bash] });
 });

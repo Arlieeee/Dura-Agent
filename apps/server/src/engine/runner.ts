@@ -199,6 +199,8 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
         break;
       }
       case 'execute_tools': {
+        // 开工留痕先于执行:崩溃后 fold 才分得清"没跑过"和"跑到一半"
+        for (const call of cmd.calls) await append('tool.started', call.id, { tool_call_id: call.id, name: call.name });
         // 一批只读工具并发跑(decide 已经保证同批无副作用);批里只有一个时就是串行
         const results = await Promise.all(cmd.calls.map(call =>
           runTool(call.name, call.args, {
@@ -211,6 +213,14 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
           const call = cmd.calls[i]; const r = results[i];
           await append('tool.result', call.id, { tool_call_id: call.id, name: call.name, ok: r.ok, output: r.output });
           emit({ type: 'tool-output-available', tool_call_id: call.id, output: r.output, ok: r.ok });
+        }
+        break;
+      }
+      case 'interrupt_tools': {
+        for (const call of cmd.calls) {
+          const output = { error: 'interrupted', message: '上次执行到一半进程中断,这个调用可能已经生效、也可能没有。先核实现状(读文件 / 看输出)再决定要不要重试。' };
+          await append('tool.result', call.id, { tool_call_id: call.id, name: call.name, ok: false, output });
+          emit({ type: 'tool-output-available', tool_call_id: call.id, output, ok: false });
         }
         break;
       }

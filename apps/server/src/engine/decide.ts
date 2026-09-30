@@ -1,11 +1,12 @@
 /** decide(state) → command:Agent 的全部"编排智能",纯函数、无 I/O、可单测可回放。 */
 import type { ToolCallReq } from '../../../../packages/protocol/src/index.js';
 import type { TurnState } from './fold.js';
-import { isClientTool, isParallelSafe } from '../tools/index.js';
+import { isClientTool, isParallelSafe, isReplaySafe } from '../tools/index.js';
 
 export type Command =
   | { type: 'call_llm' }
   | { type: 'execute_tools'; calls: ToolCallReq[] }   // 一批;长度 1 即串行
+  | { type: 'interrupt_tools'; calls: ToolCallReq[] } // 执行中途崩溃、不能重跑的调用:补 interrupted 结果
   | { type: 'suspend'; call: ToolCallReq }
   | { type: 'idle'; reason: 'stop' | 'max-steps' | 'cancelled' }
   | { type: 'noop' };            // 已挂起/已结束:什么都不做,等新事件
@@ -23,6 +24,11 @@ export function decide(state: TurnState, maxSteps = DEFAULT_MAX_STEPS): Command 
   // 有未完成的工具调用:client tool → 挂起;server tool → 执行
   const next = state.pendingCalls[0];
   if (next) {
+    // 开工了没结果 = 执行到一半进程没了。能安全重跑的照常重跑;有副作用的(bash / edit)不猜,
+    // 让模型拿着 interrupted 结果先核实现状 —— 直接重跑会把副作用做两遍,剔掉重来会让模型不知道试过
+    const torn = state.pendingCalls.filter(c => state.startedCallIds.has(c.id) && !isReplaySafe(c.name));
+    if (torn.length) return { type: 'interrupt_tools', calls: torn };
+
     if (isClientTool(next.name)) return { type: 'suspend', call: next };
 
     // 攒一批:从头取连续的 server tool,遇到 client tool 就停(它得单独挂起)
