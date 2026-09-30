@@ -169,7 +169,7 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
           const lastUser = [...state.msgs].reverse().find(m => m.role === 'user')?.content ?? '';
           const memoryHint = memory ? await memory.contextFor(lastUser) : undefined;
           system = buildSystemPrompt({
-            groups, summary: state.summary, skills: await loadSkills(),
+            groups, summary: state.summary, skills: await loadSkills(baseNames),
             workspaceHint: hint, memoryHint,
           });
         }
