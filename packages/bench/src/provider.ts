@@ -13,4 +13,4 @@ export function makeBenchProvider(model: string): ChatProvider {
 }
 
 export const benchModels = (): string[] =>
-  (process.env.BENCH_MODELS ?? 'deepseek-v4-flash').split(',').map(s => s.trim()).filter(Boolean);
+  (process.env.BENCH_MODELS ?? 'deepseek-flash').split(',').map(s => s.trim()).filter(Boolean);

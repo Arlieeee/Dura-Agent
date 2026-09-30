@@ -6,10 +6,13 @@ import type { Harness } from './types.js';
 const pct = (x: number) => (x * 100).toFixed(1) + '%';
 const n2 = (x: number) => x.toFixed(2);
 
-/** 官方定价($/M token),取自 pi-ai 的模型表。认不出的模型不猜价,成本列留空。 */
+/** 官方定价($/M token,api-docs.deepseek.com/quick_start/pricing,2026-09-30 取)。认不出的模型不猜价,成本列留空。
+ *  按闲时价记:高峰时段三项同乘 2,不改变各档之间的比值,跑分在什么时段跑都可比。 */
+const FLASH = { input: 0.15, output: 0.6, cacheRead: 0.003 };
 const PRICING: Record<string, { input: number; output: number; cacheRead: number }> = {
-  'deepseek-v4-flash': { input: 0.14, output: 0.28, cacheRead: 0.0028 },
-  'deepseek-v4-pro': { input: 0.435, output: 0.87, cacheRead: 0.003625 },
+  'deepseek-flash': FLASH,
+  'deepseek-v4-flash': FLASH,          // 旧名仍可用,已由 V4.1-Flash 承接、按 Flash 计费
+  'deepseek-v4-pro': { input: 0.66, output: 1.98, cacheRead: 0.022 },
 };
 /** 命中缓存的 prompt 按缓存读价算,其余按输入价。命中价便宜 50 倍以上,不拆开算成本就只是上界。 */
 function costOf(model: string, promptTokens: number, completionTokens: number, cachedTokens = 0): string {
