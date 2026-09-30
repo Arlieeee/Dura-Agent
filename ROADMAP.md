@@ -65,7 +65,7 @@ The current workaround is concurrency 3. The real fix is **process-level isolati
 
 ## Debts owed
 
-- **Multi-instance horizontal scaling**: in BullMQ mode SSE chunks are emitted by the executing process's bus; multiple instances need chunk relay over Redis pub/sub. Today gateway and worker must share one process, single instance.
+- **Multi-instance horizontal scaling**: in BullMQ mode SSE chunks are emitted by the executing process's bus; multiple instances need chunk relay over Redis pub/sub. The per-thread lock and the cancel abort handle are in-process too; multi-instance needs a Redis lock plus cancel pub/sub. Today gateway and worker must share one process, single instance.
 - **Sandboxing is path-level by default**: `workspace.ts` blocks `../../etc/passwd`, not `cd /` inside bash. Container mode exists (`SANDBOX=docker`), but there's no per-thread container isolation yet. DeerFlow operates at container/K8s level here.
 - **Incremental fold**: every round calls `load(threadId)` and replays everything. Measured not to be a bottleneck at current task sizes (per-task latency matches the minimal loop), but it will be past tens of thousands of events. Change it when it becomes measurable.
 - **Chinese source comments**: docs are bilingual, the source isn't — a real barrier for international contributors. Translating ~3000 lines of comments is its own piece of work.

@@ -15,13 +15,15 @@ export interface TurnState {
   attempts: number;
   /** 已有结果的 tool_call_id。runner 靠它识别"这一步只是重放",不必再留痕。 */
   seenCallIds: Set<string>;
+  /** 日志里有本 turn 的 user.interrupt。 */
+  interrupted: boolean;
 }
 
 export function fold(events: AgentEvent[], turnId: string): TurnState {
   let anchor = -1; let summary: string | undefined;
   events.forEach((e, i) => { if (e.kind === 'compaction.summary') { anchor = i; summary = String(e.payload.summary ?? ''); } });
 
-  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set() };
+  const st: TurnState = { threadId: events[0]?.thread_id ?? '', turnId, status: 'idle', msgs: [], pendingCalls: [], step: 0, summary, eventCount: 0, attempts: 0, seenCallIds: new Set(), interrupted: false };
   const resultSeen = new Set<string>();
 
   for (let i = anchor + 1; i < events.length; i++) {
@@ -74,6 +76,9 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
         // 只计数、不改 status:turn 仍是 running,重投后 decide 会从断点继续
         if (e.turn_id === turnId) st.attempts++;
         break;
+      case 'user.interrupt':
+        if (e.turn_id === turnId) st.interrupted = true;
+        break;
       case 'turn.finished':
         if (e.turn_id === turnId) st.status = 'finished';
         break;
@@ -94,4 +99,10 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
   });
   st.seenCallIds = resultSeen;
   return st;
+}
+
+/** thread 上还没收尾的 turn(pending / running / suspended 都算)。准入门禁与冷加载共用。 */
+export function activeTurnId(events: AgentEvent[]): string | undefined {
+  const finished = new Set(events.filter(e => e.kind === 'turn.finished').map(e => e.turn_id));
+  return [...events].reverse().find(e => e.kind === 'turn.started' && !finished.has(e.turn_id))?.turn_id;
 }

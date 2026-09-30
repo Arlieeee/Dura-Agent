@@ -8,8 +8,8 @@ import type { Chunk } from '../../../packages/protocol/src/index.js';
 import { makeStore, eventId } from './store.js';
 import { makeProvider } from './llm/provider.js';
 import { makeDispatcher } from './queue.js';
-import { fold } from './engine/fold.js';
-import { newThreadId, newTurnId } from './engine/runner.js';
+import { fold, activeTurnId } from './engine/fold.js';
+import { newThreadId, newTurnId, cancelTurn } from './engine/runner.js';
 import { bus } from './bus.js';
 import { listSkills } from './skills.js';
 import { hashPass, verifyPass, signToken, verifyToken } from './auth.js';
@@ -132,6 +132,9 @@ app.get('/api/threads/:id', async (req: any, reply: any) => {
 });
 
 /* ---------- 核心:提交 turn(响应即 SSE 流) ---------- */
+/** 正在受理中的 thread。has + add 之间没有 await,所以同一 thread 的并发提交只有一个能进门。 */
+const admitting = new Set<string>();
+
 app.post('/api/threads/:id/turns', async (req: any, reply: any) => {
   if (!await ownThread(req, reply)) return;
   if (!turnLimit(req.userId)) return reply.code(429).send({ error: '请求过于频繁,请稍后再试' });
@@ -140,9 +143,19 @@ app.post('/api/threads/:id/turns', async (req: any, reply: any) => {
   if (!text) return reply.code(400).send({ error: 'text required' });
   const turnId = newTurnId();
 
-  await store.append({ id: eventId(turnId, 'turn.started', 'start'), thread_id: threadId, turn_id: turnId, kind: 'turn.started', payload: { text } });
-  await store.append({ id: eventId(turnId, 'user.message', 'msg'), thread_id: threadId, turn_id: turnId, kind: 'user.message', payload: { text } });
-  await store.upsertTurn({ id: turnId, thread_id: threadId, state: 'pending', heartbeat_at: Date.now() });
+  // 准入门禁:一个 thread 同时只有一个未收尾的 turn。前端会禁用输入框,但 API 不能指望前端 ——
+  // 两个 turn 交错写同一个 thread,user 消息会插进 tool_call 和 tool_result 之间,下一次请求直接 400
+  if (admitting.has(threadId)) return reply.code(409).send({ error: '上一轮还没结束' });
+  admitting.add(threadId);
+  try {
+    const active = activeTurnId(await store.load(threadId));
+    if (active) return reply.code(409).send({ error: '上一轮还没结束', turn_id: active });
+    await store.upsertTurn({ id: turnId, thread_id: threadId, state: 'pending', heartbeat_at: Date.now() });
+    await store.append({ id: eventId(turnId, 'turn.started', 'start'), thread_id: threadId, turn_id: turnId, kind: 'turn.started', payload: { text } });
+    await store.append({ id: eventId(turnId, 'user.message', 'msg'), thread_id: threadId, turn_id: turnId, kind: 'user.message', payload: { text } });
+  } finally {
+    admitting.delete(threadId);
+  }
   const t = await store.getThread(threadId);
   if (t && (!t.title || t.title === '新会话')) await store.setThreadTitle(threadId, text.slice(0, 24));
   await store.touchThread(threadId);
@@ -184,6 +197,18 @@ app.post('/api/threads/:id/continue', async (req: any, reply: any) => {
     console.error('[gateway] kick 失败:', e?.message ?? e);
     bus.emit(threadId, { type: 'finish', finish_reason: 'error' });
   });
+});
+
+/* ---------- 喊停当前 turn ---------- */
+app.post('/api/threads/:id/cancel', async (req: any, reply: any) => {
+  if (!await ownThread(req, reply)) return;
+  const threadId = req.params.id;
+  const turnId = activeTurnId(await store.load(threadId));
+  if (!turnId) return { cancelled: null };
+  await cancelTurn(store, threadId, turnId);
+  // 在跑的 turn 已被 abort 打断;pending / suspended 的没有 runner,kick 一次让它收敛到 cancelled
+  await dispatcher.kick(threadId, turnId);
+  return { cancelled: turnId };
 });
 
 /* ---------- 断线重连 ---------- */

@@ -1,7 +1,7 @@
 /** fold 纯函数单测:事件回放 → 状态折叠。 */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fold } from '../src/engine/fold.js';
+import { fold, activeTurnId } from '../src/engine/fold.js';
 import { eventId } from '../src/store.js';
 import type { AgentEvent } from '../../../packages/protocol/src/index.js';
 
@@ -131,4 +131,15 @@ test('eventId 确定性:同输入同 ID,异输入异 ID(幂等根基)', () => {
   assert.equal(eventId('trn_1', 'tool.result', 'c1'), eventId('trn_1', 'tool.result', 'c1'));
   assert.notEqual(eventId('trn_1', 'tool.result', 'c1'), eventId('trn_1', 'tool.result', 'c2'));
   assert.notEqual(eventId('trn_1', 'tool.result', 'c1'), eventId('trn_2', 'tool.result', 'c1'));
+});
+
+test('user.interrupt 只标记本 turn;activeTurnId 找还没收尾的 turn', () => {
+  const events = [
+    ev('turn.started', {}, 'trn_a'), ev('user.message', { text: 'q' }, 'trn_a'), ev('turn.finished', { reason: 'stop' }, 'trn_a'),
+    ev('turn.started', {}, 'trn_b'), ev('user.message', { text: 'q2' }, 'trn_b'), ev('user.interrupt', {}, 'trn_b'),
+  ];
+  assert.equal(fold(events, 'trn_b').interrupted, true);
+  assert.equal(fold(events, 'trn_a').interrupted, false);
+  assert.equal(activeTurnId(events), 'trn_b');
+  assert.equal(activeTurnId([...events, ev('turn.finished', { reason: 'cancelled' }, 'trn_b')]), undefined);
 });

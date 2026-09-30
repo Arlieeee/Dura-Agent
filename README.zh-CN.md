@@ -16,6 +16,8 @@
 | 心跳 + sweeper + 重投 | `heartbeat_at` + sweeper 定时器 | `queue.ts` |
 | SSE 实时投影 | bus + `/turns` 流式响应 | `bus.ts`、`index.ts` |
 | ask_user 挂起/恢复 | `turn.suspended` 事件 + `/continue` | `runner.ts`、`fold.ts` |
+| 喊停 | `user.interrupt` 持久事件 + `AbortSignal` 打断流 + `/cancel`;连带子 agent | `runner.ts`(cancelTurn)、`decide.ts` |
+| 同 thread 串行 | 准入门禁(未收尾的 turn → 409)+ runner 进程内 thread 锁 | `index.ts`、`runner.ts`(withThreadLock) |
 | compaction 摘要锚点 | `compaction.summary` 事件 | `runner.ts`(maybeCompact) |
 | 可插拔工具网关 | 工具注册表(chat / coding / memory 三组)+ 只读工具并发执行 | `tools/index.ts` |
 | 任务隔离沙箱 | per-thread 工作区 + 路径逃逸防护 | `workspace.ts` |

@@ -94,7 +94,7 @@ DeerFlow 的语义是"技能**激活后**才限定",而本项目还没有激活�
 
 ## 已知要还的债
 
-- **多实例水平扩容**:bullmq 模式下 SSE chunk 由执行者进程的 bus 发出,多实例需要把转播搬到 Redis pub/sub。
+- **多实例水平扩容**:bullmq 模式下 SSE chunk 由执行者进程的 bus 发出,多实例需要把转播搬到 Redis pub/sub。同 thread 串行锁与喊停的 abort 句柄也是进程内的,多实例时要换成 Redis 锁 + cancel pub/sub。
   现状是 gateway 与 worker 必须同进程、单实例。
 - **沙箱只有路径级**:`workspace.ts` 挡得住 `../../etc/passwd`,挡不住 bash 里的 `cd /`。
   容器化已就绪(Dockerfile),但没有 per-thread 容器隔离。DeerFlow 在这块是容器/K8s 级。

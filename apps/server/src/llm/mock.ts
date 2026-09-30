@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 export class MockProvider implements ChatProvider {
   name = 'mock';
 
-  async chat(msgs: ChatMsg[], _tools: ToolSpec[], onDelta: (d: ChatDelta) => void): Promise<ChatResult> {
+  async chat(msgs: ChatMsg[], _tools: ToolSpec[], onDelta: (d: ChatDelta) => void, signal?: AbortSignal): Promise<ChatResult> {
     const userText = [...msgs].reverse().find(m => m.role === 'user')?.content ?? '';
     const toolResults = msgs.filter(m => m.role === 'tool');
     const hasSearch = msgs.some(m => m.tool_calls?.some(c => c.name === 'web_search'));
@@ -15,7 +15,7 @@ export class MockProvider implements ChatProvider {
     const hasDoc = msgs.some(m => m.tool_calls?.some(c => c.name === 'write_document'));
     const stableId = (k: string) => 'call_' + createHash('sha1').update(userText + k).digest('hex').slice(0, 8);
     const stream = async (kind: 'reasoning' | 'text', s: string) => {
-      for (const chunk of s.match(/.{1,8}/g) ?? []) { onDelta({ kind, delta: chunk }); await sleep(20); }
+      for (const chunk of s.match(/.{1,8}/g) ?? []) { signal?.throwIfAborted(); onDelta({ kind, delta: chunk }); await sleep(20); }
     };
 
     if (!hasSearch) {

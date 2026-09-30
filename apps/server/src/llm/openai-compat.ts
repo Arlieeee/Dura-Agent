@@ -24,7 +24,7 @@ export class OpenAICompatProvider implements ChatProvider {
     });
   }
 
-  async chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void): Promise<ChatResult> {
+  async chat(msgs: ChatMsg[], tools: ToolSpec[], onDelta: (d: ChatDelta) => void, signal?: AbortSignal): Promise<ChatResult> {
     const body: any = {
       model: this.model, stream: true, messages: this.toWire(msgs),
       stream_options: { include_usage: true },
@@ -37,6 +37,7 @@ export class OpenAICompatProvider implements ChatProvider {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify(body),
+      signal,
     });
     if (!res.ok || !res.body) throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
 
