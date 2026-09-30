@@ -43,7 +43,7 @@ class ScriptedProvider implements ChatProvider {
       tool_calls: [{ id: this.freshIds ? `call_${randomUUID().slice(0, 8)}` : `call_step${this.calls}`, name: act.tool, args: act.args }],
     };
   }
-  async summarize(text: string) { return '【摘要】' + text.slice(0, 100); }
+  async summarize() { return '【摘要】脚本化'; }
 }
 
 /* ================= 被测:两种执行方式 ================= */
@@ -232,7 +232,7 @@ async function r4MyAgent(): Promise<ResilienceResult> {
     const spy: ChatProvider = {
       name: 'spy',
       async chat(msgs) { maxMsgs = Math.max(maxMsgs, msgs.length); return { text: 'ok', tool_calls: [], usage: { prompt_tokens: 1, completion_tokens: 1 } }; },
-      async summarize(t) { return '【摘要】' + t.slice(0, 80); },
+      async summarize(msgs) { return '【摘要】' + msgs.at(-1)?.content.slice(0, 80); },
     };
     for (let i = 0; i < 12; i++) {
       const turnId = newTurnId();

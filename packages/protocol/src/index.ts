@@ -10,7 +10,10 @@ export type EventKind =
   // 用户喊停。是持久事实而不是进程内信号:崩溃重投后 fold 照样看得见,turn 收敛到 cancelled。
   | 'user.interrupt'
   // 工具开工留痕,先于执行落盘。有它没 result = 执行到一半进程没了,副作用可能已经发生。
-  | 'tool.started';
+  | 'tool.started'
+  // 开工时的环境快照(工作区清单、长期记忆),在对话里渲染成一条 user 消息。
+  // 放进日志而不是 system prompt:只追加不改写,前缀缓存才稳;重投时也逐字节相同。
+  | 'context.snapshot';
 
 export type FinishReason = 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'max-steps';
 

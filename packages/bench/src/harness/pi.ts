@@ -16,7 +16,7 @@
 import type { Harness, Trace, TraceStep } from '../types.js';
 import { openWorkspace } from '../../../../apps/server/src/workspace.js';
 import { activeTools, runTool } from '../../../../apps/server/src/tools/index.js';
-import { buildSystemPrompt } from '../../../../apps/server/src/prompt.js';
+import { buildSystemPrompt, buildContextBlock } from '../../../../apps/server/src/prompt.js';
 import { withTimeout } from './raw.js';
 
 export async function piAvailable(): Promise<boolean> {
@@ -70,7 +70,7 @@ export const piHarness: Harness = {
     const hint = (await ws.list()).slice(0, 100).join('\n') || '(空目录)';
     const agent = new Agent({
       initialState: {
-        systemPrompt: buildSystemPrompt({ groups: ['coding'], workspaceHint: hint }),
+        systemPrompt: buildSystemPrompt({ groups: ['coding'] }),
         model,
         thinkingLevel: 'off',
         tools: tools as any,
@@ -93,7 +93,8 @@ export const piHarness: Harness = {
     const timer = setTimeout(() => { try { agent.abort(); } catch { /* 尽力而为 */ } }, ctx.budget.timeoutMs);
     let errorMessage: string | undefined;
     try {
-      await withTimeout(agent.prompt(ctx.task.prompt), ctx.budget.timeoutMs + 5_000);
+      // 与 my-agent 同样的布局:system 纯静态,工作区清单跟在任务后面
+      await withTimeout(agent.prompt(`${ctx.task.prompt}\n\n${buildContextBlock({ workspaceHint: hint })}`), ctx.budget.timeoutMs + 5_000);
     } catch (err: any) {
       errorMessage = String(err?.message ?? err);
     } finally {

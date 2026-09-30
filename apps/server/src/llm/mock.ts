@@ -40,8 +40,8 @@ export class MockProvider implements ChatProvider {
     return { text: final, tool_calls: [] };
   }
 
-  async summarize(text: string): Promise<string> {
-    return '【摘要】' + text.replace(/\s+/g, ' ').slice(0, 200);
+  async summarize(msgs: ChatMsg[]): Promise<string> {
+    return msgs.filter(m => m.role === 'user').map(m => m.content).join(' ').replace(/\s+/g, ' ').slice(0, 200);
   }
 }
 function summarizeTools(toolMsgs: ChatMsg[]): string {

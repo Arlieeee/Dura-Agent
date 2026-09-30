@@ -7,7 +7,8 @@
     "bench:resilience": "tsx src/resilience-cli.ts",
     "bench:regen": "tsx src/regen.ts",
     "test": "node --import tsx --test \"test/**/*.test.ts\"",
-    "bench:doctor": "tsx src/doctor.ts"
+    "bench:doctor": "tsx src/doctor.ts",
+    "bench:session": "tsx src/session.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

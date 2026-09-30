@@ -20,16 +20,21 @@ const CODING = `你是 my-agent,一个在隔离工作区里干活的编码助手
 - **别停下来等回话**:工具列表里没有提问工具时,把最合理的解释当作答案做完,
   在最后说明你按什么假设做的。发现路径/名称对不上就自己去找对的那个,找到了直接改。`;
 
-export interface PromptCtx { groups: ToolGroup[]; summary?: string; skills?: string; workspaceHint?: string; memoryHint?: string }
+export interface PromptCtx { groups: ToolGroup[]; skills?: string }
 
-export function buildSystemPrompt({ groups, summary, skills, workspaceHint, memoryHint }: PromptCtx): string {
+/** 只含静态内容:同一工具集下逐字节不变,跨任务、跨 turn 都能命中服务端前缀缓存。
+ *  会变的东西(工作区清单、记忆、摘要)一律不许进来 —— DeepSeek 按消息边界缓存,
+ *  system 里改一个字,连同其后的工具定义整段 miss(实测命中从 1280 token 掉到 0)。 */
+export function buildSystemPrompt({ groups, skills }: PromptCtx): string {
   const base = groups.includes('coding') ? (groups.includes('chat') ? `${CODING}\n\n也可以联网搜索和生成在线文档。` : CODING) : CHAT;
+  return [base, skills ? `【可用技能】\n${skills}` : ''].filter(Boolean).join('\n\n');
+}
+
+/** 开工时的环境快照,作为 user 消息追加进对话。没有内容时返回空串。 */
+export function buildContextBlock({ workspaceHint, memoryHint }: { workspaceHint?: string; memoryHint?: string }): string {
   return [
-    base,
     // 记忆排在工作区之前:它是"长期约定",应该先于本次任务的具体材料被读到
     memoryHint || '',
     workspaceHint ? `【开工时的工作区文件】\n${workspaceHint}` : '',
-    summary ? `【此前对话摘要】${summary}` : '',
-    skills ? `【可用技能】\n${skills}` : '',
   ].filter(Boolean).join('\n\n');
 }
