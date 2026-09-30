@@ -2,7 +2,7 @@
  *  这条曾经真的挂过 —— 一个只声明 chat 工具的写作技能,把 coding 场景的工具全掐没了。 */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { skillToolAllowList, resetSkillCache } from '../src/skills.js';
+import { skillToolAllowList, loadSkills, resetSkillCache } from '../src/skills.js';
 
 test('内置写作技能:约束 chat 场景,但不碰 coding 场景', async () => {
   resetSkillCache();
@@ -21,4 +21,10 @@ test('不传可用工具集时退回全局收窄(向后兼容)', async () => {
   resetSkillCache();
   const all = await skillToolAllowList();
   assert.ok(all === null || all.size > 0);
+});
+
+test('与场景无关的技能也不进提示词', async () => {
+  resetSkillCache();
+  assert.match(await loadSkills(['web_search', 'write_document', 'ask_user']), /报告写作/);
+  assert.doesNotMatch(await loadSkills(['read_file', 'write_file', 'edit_file', 'bash']), /报告写作/);
 });

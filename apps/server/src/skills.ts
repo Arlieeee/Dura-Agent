@@ -50,8 +50,15 @@ export async function loadSkillDefs(): Promise<Skill[]> {
   return cache;
 }
 
-export async function loadSkills(): Promise<string> {
-  return (await loadSkillDefs()).map(s => s.body).join('\n---\n');
+/** 技能是否适用于当前场景:没声明 allowed-tools 的处处适用;声明了的,要与当前工具集有交集。
+ *  注入提示词与收窄工具面共用这一个判据 —— 不参与收窄的技能也不该占提示词。 */
+const relevant = (s: Skill, pool: Set<string> | null) =>
+  !s.allowedTools?.length || !pool || s.allowedTools.some(t => pool.has(t));
+
+/** 注入 system prompt 的技能正文。`available` 同 skillToolAllowList。 */
+export async function loadSkills(available?: Iterable<string>): Promise<string> {
+  const pool = available ? new Set(available) : null;
+  return (await loadSkillDefs()).filter(s => relevant(s, pool)).map(s => s.body).join('\n---\n');
 }
 
 /** 生效技能对工具面的收窄结果;没有技能声明 allowed-tools 时返回 null(不设限)。
@@ -62,8 +69,7 @@ export async function loadSkills(): Promise<string> {
  *  所以用"声明的工具与当前工具集有交集"来近似判断它是否适用于此场景。) */
 export async function skillToolAllowList(available?: Iterable<string>): Promise<Set<string> | null> {
   const pool = available ? new Set(available) : null;
-  const declared = (await loadSkillDefs()).filter(s =>
-    s.allowedTools?.length && (!pool || s.allowedTools.some(t => pool.has(t))));
+  const declared = (await loadSkillDefs()).filter(s => s.allowedTools?.length && relevant(s, pool));
   if (!declared.length) return null;
   // 求交集:一个技能没列的工具,别的技能列了也不放行
   let acc: Set<string> | undefined;
