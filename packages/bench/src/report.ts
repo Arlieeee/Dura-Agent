@@ -7,14 +7,15 @@ const pct = (x: number) => (x * 100).toFixed(1) + '%';
 const n2 = (x: number) => x.toFixed(2);
 
 /** 官方定价($/M token),取自 pi-ai 的模型表。认不出的模型不猜价,成本列留空。 */
-const PRICING: Record<string, { input: number; output: number }> = {
-  'deepseek-v4-flash': { input: 0.14, output: 0.28 },
-  'deepseek-v4-pro': { input: 0.435, output: 0.87 },
+const PRICING: Record<string, { input: number; output: number; cacheRead: number }> = {
+  'deepseek-v4-flash': { input: 0.14, output: 0.28, cacheRead: 0.0028 },
+  'deepseek-v4-pro': { input: 0.435, output: 0.87, cacheRead: 0.003625 },
 };
-function costOf(model: string, promptTokens: number, completionTokens: number): string {
+/** 命中缓存的 prompt 按缓存读价算,其余按输入价。命中价便宜 50 倍以上,不拆开算成本就只是上界。 */
+function costOf(model: string, promptTokens: number, completionTokens: number, cachedTokens = 0): string {
   const p = PRICING[model];
   if (!p) return '—';
-  const usd = (promptTokens * p.input + completionTokens * p.output) / 1_000_000;
+  const usd = ((promptTokens - cachedTokens) * p.input + cachedTokens * p.cacheRead + completionTokens * p.output) / 1_000_000;
   return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(3)}`;
 }
 
@@ -35,16 +36,17 @@ export function renderReport(records: RunRecord[], harnesses: Harness[], meta: {
   L.push('');
 
   L.push('## 总分', '');
-  L.push('| harness | 模型 | Completion | TaskScore | Process | 越权 | LLM 调用/题 | 工具调用/题 | 工具报错/题 | 总 token | 成本 | 成本/题 | 平均耗时 |');
-  L.push('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
+  L.push('| harness | 模型 | Completion | TaskScore | Process | 越权 | LLM 调用/题 | 工具调用/题 | 工具报错/题 | 总 token | 缓存命中 | 成本 | 成本/题 | 平均耗时 |');
+  L.push('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|');
   for (const a of aggs) {
     const total = a.totalPromptTokens + a.totalCompletionTokens;
-    L.push(`| \`${a.harnessId}\` | ${a.model} | **${pct(a.completion)}** | ${pct(a.taskScore)} | ${pct(a.process)} | ${a.securityFailures} | ${n2(a.avgLlmCalls)} | ${n2(a.avgToolCalls)} | ${n2(a.avgToolErrors)} | ${total.toLocaleString()} | ${costOf(a.model, a.totalPromptTokens, a.totalCompletionTokens)} | ${costOf(a.model, a.totalPromptTokens / a.n, a.totalCompletionTokens / a.n)} | ${(a.avgWallMs / 1000).toFixed(1)}s |`);
+    L.push(`| \`${a.harnessId}\` | ${a.model} | **${pct(a.completion)}** | ${pct(a.taskScore)} | ${pct(a.process)} | ${a.securityFailures} | ${n2(a.avgLlmCalls)} | ${n2(a.avgToolCalls)} | ${n2(a.avgToolErrors)} | ${total.toLocaleString()} | ${a.totalCachedTokens ? pct(a.totalCachedTokens / a.totalPromptTokens) : '—'} | ${costOf(a.model, a.totalPromptTokens, a.totalCompletionTokens, a.totalCachedTokens)} | ${costOf(a.model, a.totalPromptTokens / a.n, a.totalCompletionTokens / a.n, a.totalCachedTokens / a.n)} | ${(a.avgWallMs / 1000).toFixed(1)}s |`);
   }
   L.push('');
   L.push('- **Completion** = oracle 判定的客观完成度(主指标,答"做成了吗")');
   L.push('- **TaskScore** = Security × Completion × Process(答"做得体面吗";越权直接 0)');
   L.push('- **Process** = 错误恢复 / 预算效率 / 终态自洽 的均值,带 0.4 地板');
+  L.push('- **缓存命中** = prompt token 里命中服务端前缀缓存的比例;成本按命中价 / 未命中价分开算');
   L.push('');
 
   L.push('> 「平均耗时」仅供参考:跑分是并发的,单格 wallMs 会被 API 排队放大(实测同一格串行 10s / 并发下偶发 130s)。');

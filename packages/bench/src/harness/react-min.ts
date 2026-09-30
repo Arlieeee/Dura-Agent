@@ -30,7 +30,7 @@ export const reactMinHarness: Harness = {
       { role: 'user', content: ctx.task.prompt },
     ];
 
-    let llmCalls = 0, toolCalls = 0, toolErrors = 0, promptTokens = 0, completionTokens = 0;
+    let llmCalls = 0, toolCalls = 0, toolErrors = 0, promptTokens = 0, completionTokens = 0, cachedTokens = 0;
     let finalText = '';
     let terminated: Trace['terminated'] = 'max-steps';
     const deadline = t0 + ctx.budget.timeoutMs;
@@ -43,7 +43,8 @@ export const reactMinHarness: Harness = {
         llmCalls++;
         promptTokens += out.usage?.prompt_tokens ?? 0;
         completionTokens += out.usage?.completion_tokens ?? 0;
-        steps.push({ kind: 'llm', text: out.text, promptTokens: out.usage?.prompt_tokens, completionTokens: out.usage?.completion_tokens });
+        cachedTokens += out.usage?.cached_tokens ?? 0;
+        steps.push({ kind: 'llm', text: out.text, promptTokens: out.usage?.prompt_tokens, completionTokens: out.usage?.completion_tokens, cachedTokens: out.usage?.cached_tokens });
         if (out.text) finalText = out.text;
 
         msgs.push({
@@ -67,11 +68,11 @@ export const reactMinHarness: Harness = {
       const timeout = /timeout/i.test(String(err?.message));
       steps.push({ kind: 'error', text: String(err?.message ?? err) });
       return {
-        steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens,
+        steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, cachedTokens,
         wallMs: Date.now() - t0, terminated: timeout ? 'timeout' : 'error', errorMessage: String(err?.message ?? err),
       };
     }
 
-    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, wallMs: Date.now() - t0, terminated };
+    return { steps, finalText, llmCalls, toolCalls, toolErrors, promptTokens, completionTokens, cachedTokens, wallMs: Date.now() - t0, terminated };
   },
 };

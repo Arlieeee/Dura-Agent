@@ -51,6 +51,7 @@ export interface TraceStep {
   text?: string;
   promptTokens?: number;
   completionTokens?: number;
+  cachedTokens?: number;
 }
 export interface Trace {
   steps: TraceStep[];
@@ -60,6 +61,8 @@ export interface Trace {
   toolErrors: number;
   promptTokens: number;
   completionTokens: number;
+  /** promptTokens 里命中前缀缓存的部分。provider 不报时缺省 */
+  cachedTokens?: number;
   wallMs: number;
   /** 预算耗尽 / 超时 / 崩溃 */
   terminated: 'stop' | 'max-steps' | 'timeout' | 'error';

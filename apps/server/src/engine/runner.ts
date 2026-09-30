@@ -106,6 +106,9 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
   }, 5_000);
   const ctl = new AbortController();
   liveTurns.set(turnId, ctl);
+  // system prompt 每个 runner 只拼一次:各步逐字节相同,服务端前缀缓存才能从第二步起一直命中。
+  // 之前工作区清单只在第 0 步注入,第 1 步前缀一变就全量 miss,模型也从第 1 步起看不到清单了。
+  let system: string | undefined;
   const onParentAbort = () => void cancelTurn(store, threadId, turnId).catch(() => {});
   deps.signal?.addEventListener('abort', onParentAbort, { once: true });
   if (deps.signal?.aborted) onParentAbort();
@@ -156,17 +159,20 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
 
     switch (cmd.type) {
       case 'call_llm': {
-        // 工作区清单只在 coding 模式、且首步注入:让模型开局就知道有哪些文件,省掉一轮 list_files
-        const hint = groups.includes('coding') && state.step === 0
-          ? (await workspace.list()).slice(0, 100).join('\n') || '(空目录)'
-          : undefined;
-        // 索引常驻 + 对本轮输入自动预取相关正文。只给索引的话模型不会主动去 recall(实测)
-        const firstUser = state.msgs.find(m => m.role === 'user')?.content ?? '';
-        const memoryHint = memory && state.step === 0 ? await memory.contextFor(firstUser) : undefined;
-        const system = buildSystemPrompt({
-          groups, summary: state.summary, skills: await loadSkills(),
-          workspaceHint: hint, memoryHint,
-        });
+        if (system === undefined) {
+          // 工作区清单只在 coding 模式注入:让模型开局就知道有哪些文件,省掉一轮 list_files。
+          // 它是开工时的快照,之后新建的文件靠 list_files 看
+          const hint = groups.includes('coding')
+            ? (await workspace.list()).slice(0, 100).join('\n') || '(空目录)'
+            : undefined;
+          // 索引常驻 + 对本轮输入自动预取相关正文。只给索引的话模型不会主动去 recall(实测)
+          const lastUser = [...state.msgs].reverse().find(m => m.role === 'user')?.content ?? '';
+          const memoryHint = memory ? await memory.contextFor(lastUser) : undefined;
+          system = buildSystemPrompt({
+            groups, summary: state.summary, skills: await loadSkills(),
+            workspaceHint: hint, memoryHint,
+          });
+        }
 
         const step = state.step;
         const out = await provider.chat(

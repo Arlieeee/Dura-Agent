@@ -54,7 +54,11 @@ export class OpenAICompatProvider implements ChatProvider {
         const data = line.slice(5).trim();
         if (data === '[DONE]') continue;
         let j: any; try { j = JSON.parse(data); } catch { continue; }
-        if (j.usage) usage = { prompt_tokens: j.usage.prompt_tokens ?? 0, completion_tokens: j.usage.completion_tokens ?? 0 };
+        // 缓存命中数各家字段不同:DeepSeek 是 prompt_cache_hit_tokens,OpenAI 是 prompt_tokens_details.cached_tokens
+        if (j.usage) usage = {
+          prompt_tokens: j.usage.prompt_tokens ?? 0, completion_tokens: j.usage.completion_tokens ?? 0,
+          cached_tokens: j.usage.prompt_cache_hit_tokens ?? j.usage.prompt_tokens_details?.cached_tokens ?? 0,
+        };
         const delta = j.choices?.[0]?.delta; if (!delta) continue;
         if (delta.reasoning_content) { reasoning += delta.reasoning_content; onDelta({ kind: 'reasoning', delta: delta.reasoning_content }); }
         if (delta.content) { text += delta.content; onDelta({ kind: 'text', delta: delta.content }); }

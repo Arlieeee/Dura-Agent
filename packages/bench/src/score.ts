@@ -66,7 +66,7 @@ export interface Aggregate {
   completion: number; taskScore: number; process: number;
   securityFailures: number;
   avgLlmCalls: number; avgToolCalls: number; avgToolErrors: number;
-  totalPromptTokens: number; totalCompletionTokens: number; avgWallMs: number;
+  totalPromptTokens: number; totalCompletionTokens: number; totalCachedTokens: number; avgWallMs: number;
   byCategory: Record<string, { n: number; completion: number }>;
 }
 
@@ -96,6 +96,7 @@ export function aggregate(records: { harnessId: string; model: string; category:
       avgToolErrors: mean(r => r.trace.toolErrors),
       totalPromptTokens: rs.reduce((a, r) => a + r.trace.promptTokens, 0),
       totalCompletionTokens: rs.reduce((a, r) => a + r.trace.completionTokens, 0),
+      totalCachedTokens: rs.reduce((a, r) => a + (r.trace.cachedTokens ?? 0), 0),
       avgWallMs: mean(r => r.trace.wallMs),
       byCategory,
     };
