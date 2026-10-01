@@ -19,6 +19,7 @@
 | 喊停 | `user.interrupt` 持久事件 + `AbortSignal` 打断流 + `/cancel`;连带子 agent | `runner.ts`(cancelTurn)、`decide.ts` |
 | 同 thread 串行 | 准入门禁(未收尾的 turn → 409)+ runner 进程内 thread 锁 | `index.ts`、`runner.ts`(withThreadLock) |
 | compaction 摘要锚点 | `compaction.summary` 事件;摘要请求原样重放主对话前缀,只追加指令 | `runner.ts`(maybeCompact) |
+| 大工具结果溢出 | 超出内联预算的结果全文写进 `.dura/spill/`,上下文只留头尾 + 路径提示(原先是悄悄截断) | `engine/tool-output.ts`、`runner.ts` |
 | 请求只追加 | system 纯静态;工作区清单 / 记忆是 `context.snapshot` 事件,渲染成 user 消息 —— 每个请求都是上一个请求的延伸(有单测) | `prompt.ts`、`fold.ts` |
 | 可插拔工具网关 | 工具注册表(chat / coding / memory 三组)+ 只读工具并发执行 | `tools/index.ts` |
 | 任务隔离沙箱 | per-thread 工作区 + 路径逃逸防护 | `workspace.ts` |
@@ -162,7 +163,7 @@ my-agent/
 ├─ packages/protocol/        # 共享类型:事件、chunk、DTO(零依赖)
 ├─ packages/bench/           # harness 对照评测(见 BENCHMARK.md)
 │  ├─ src/harness/           # raw / react-min / my-agent 三档适配器
-│  ├─ src/tasks/             # 17 道带 oracle 的沙箱任务
+│  ├─ src/tasks/             # 21 道带 oracle 的沙箱任务
 │  ├─ src/{runner,score,report}.ts
 │  └─ src/resilience.ts      # 故障注入:崩溃恢复/重复投递/悬空调用/上下文膨胀
 ├─ apps/server/              # Fastify gateway + 引擎

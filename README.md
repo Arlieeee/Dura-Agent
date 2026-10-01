@@ -104,6 +104,7 @@ RUNNER_MODE=bullmq REDIS_URL=redis://localhost:6379 npm run dev:server
 | Cancel | durable `user.interrupt` event + `AbortSignal` on the stream + `/cancel`; cascades to sub-agents | `runner.ts` (cancelTurn), `decide.ts` |
 | One turn per thread | admission gate (unfinished turn → 409) + in-process thread lock in the runner | `index.ts`, `runner.ts` (withThreadLock) |
 | Context compaction | `compaction.summary` anchor event; the summary request replays the conversation's exact prefix and only appends an instruction | `runner.ts` |
+| Tool-output spill | Results over the inline budget go to `.dura/spill/` in full; the context keeps head + tail + a pointer (previously a silent cut) | `engine/tool-output.ts`, `runner.ts` |
 | Append-only requests | Static system prompt; workspace listing / memory are a `context.snapshot` event rendered as a user message — every request extends the previous one (pinned by a test) | `prompt.ts`, `fold.ts` |
 | Pluggable tools | registry with `chat` / `coding` / `memory` groups | `tools/index.ts` |
 | Task isolation | per-thread workspace + path-escape guard | `workspace.ts` |
