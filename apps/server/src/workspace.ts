@@ -60,7 +60,8 @@ export class Workspace implements WorkspaceLike {
       try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
         if (out.length >= max) return;
-        if (e.name === 'node_modules' || e.name === '.git') continue;
+        // .dura 是框架自己的目录(溢出的工具结果):不进清单,但直接 list('.dura/spill') 照样能列
+        if (e.name === 'node_modules' || e.name === '.git' || e.name === '.dura') continue;
         const abs = path.join(dir, e.name);
         if (e.isDirectory()) { out.push(this.rel(abs) + '/'); await walk(abs); }
         else out.push(this.rel(abs));

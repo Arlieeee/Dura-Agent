@@ -12,6 +12,7 @@ import { bus } from '../bus.js';
 import { loadSkills, skillToolAllowList } from '../skills.js';
 import { threadWorkspace, type Workspace } from '../workspace.js';
 import { buildSystemPrompt, buildContextBlock } from '../prompt.js';
+import { needsSpill, formatToolOutput } from './tool-output.js';
 import { MemoryDir } from '../memory.js';
 import { makeExecutor, type Executor } from '../executor.js';
 
@@ -208,7 +209,8 @@ async function runTurnLocked(deps: RunnerDeps, threadId: string, turnId: string)
         // 落盘严格按模型给出的顺序,不按完成顺序 —— 否则同一批的日志顺序随机,fold 就不确定了
         for (let i = 0; i < cmd.calls.length; i++) {
           const call = cmd.calls[i]; const r = results[i];
-          await append('tool.result', call.id, { tool_call_id: call.id, name: call.name, ok: r.ok, output: r.output });
+          const spilledTo = needsSpill(r.output) ? await spill(workspace, call.id, r.output) : undefined;
+          await append('tool.result', call.id, { tool_call_id: call.id, name: call.name, ok: r.ok, output: r.output, ...(spilledTo && { spilled_to: spilledTo }) });
           emit({ type: 'tool-output-available', tool_call_id: call.id, output: r.output, ok: r.ok });
         }
         break;
@@ -283,6 +285,15 @@ function makeSpawn(deps: RunnerDeps, parentThreadId: string, workspace: Workspac
     const toolCalls = st.msgs.filter(m => m.role === 'tool').length;
     return { text: text || '(子 agent 没有给出结论)', llmCalls, toolCalls };
   };
+}
+
+/** 超出内联预算的工具结果全文写进工作区,事件里记下路径;上下文只渲染头尾预览 + 路径(见 tool-output.ts)。
+ *  写在工作区里是因为 read_file / grep_files 只能读工作区 —— 模型要能自己翻全文。
+ *  写失败就不溢出,退回截断渲染:丢后半截好过丢掉整条结果。 */
+async function spill(workspace: Workspace, callId: string, output: unknown): Promise<string | undefined> {
+  const rel = `.dura/spill/${callId}.txt`;
+  try { await workspace.write(rel, formatToolOutput(output)); return rel; }
+  catch (err: any) { console.warn(`[runner] 工具结果溢出写盘失败,退回截断:${err?.message ?? err}`); return undefined; }
 }
 
 async function maybeCompact(deps: RunnerDeps, threadId: string, turnId: string, system: string, tools: ToolSpec[]) {
