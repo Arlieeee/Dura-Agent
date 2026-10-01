@@ -43,7 +43,7 @@ So this measures **Pi's agent loop**, not "Pi CLI out of the box". The latter mi
 
 ## Two task sets
 
-**17 hand-built tasks** — offline, deterministic, one oracle each, across 7 capability dimensions:
+**21 hand-built tasks** — offline, deterministic, one oracle each, across 8 capability dimensions:
 
 | Dimension | Tasks | What it probes |
 |---|---:|---|
@@ -54,6 +54,7 @@ So this measures **Pi's agent loop**, not "Pi CLI out of the box". The latter mi
 | error-recovery | 2 | A wrong path in the prompt; an `edit` that fails on ambiguity |
 | long-horizon | 2 | Five dependent steps; an answer that requires executing 5000 iterations |
 | constraint-following | 2 | A file that must not be touched; an output format pinned exactly |
+| context-pressure | 3 | The answer lies past the first 4000 characters of tool output: a test summary at the end, the last error, a config key deep in a big file (added in round five) |
 
 **HumanEval** (OpenAI, 164 Python tasks) — a real public benchmark, brought in not to chase a leaderboard but because it puts our central question in plain sight:
 
@@ -419,6 +420,68 @@ on flash, level with the others on pro.
   thousand to ten thousand tokens, so one tool output is several percent; dsh's numbers come from sessions of tens of thousands of
   tokens. The remaining misses are essentially new content (tool output, the next question, a post-compaction summary).
 
+## Round five (2026-10-01): spill big tool results to a file instead of silently truncating
+
+`fold` used to render every tool result as JSON cut at 4000 characters, **with no notice**. `read_file` returns up to 2000 lines /
+60,000 characters and says `shown: 1-2000`, so the model believed it had seen lines it never saw, and the "use offset to read on"
+hint at the end was cut too. Long grep and bash output lost its tail, which is exactly where test summaries and the last error live.
+No file in the first 18 tasks exceeds 3000 characters, so this was never measured.
+
+Following dsh's spill policy: a result over the inline budget is written in full to `.dura/spill/<call id>.txt` in the workspace and the
+event records the path; the context renders the head and tail with one line stating **how much was omitted, where the full text is,
+and how to read it**. Rendering is a pure function of the event, so requests stay append-only. `.dura` stays out of workspace listings.
+
+New `context-pressure` category, 3 tasks, each with the answer past the first 4000 characters of tool output: the only failing check at
+the end of 400 lines of output, the last of 60 ERROR lines in a 1500-line log, and a config key at line 679 of a 700-line file behind a
+similarly named decoy.
+
+### Before / after (`my-agent`, salted, run simultaneously)
+
+| ctx tasks (9 runs per cell) | Completion | LLM calls/task | Prompt tokens/task | Cost/task |
+|---|---:|---:|---:|---:|
+| flash, bash | 100% → 100% | 5.44 → **4.22 (−22%)** | 16,579 → 12,947 | −5% |
+| v4-pro, bash | 100% → 100% | 4.44 → **3.44 (−23%)** | 13,591 → 9,991 | flat |
+| flash, no bash | 100% → 100% | 5.33 → **4.78 (−10%)** | 17,023 → 14,642 | **−10%** |
+| v4-pro, no bash | 100% → 100% | 5.78 → **4.00 (−31%)** | 25,085 → 12,074 | **−36%** |
+
+On all 21 tasks completion stays at 100% and cost moves −4% (flash) / −5% (pro): no regression.
+
+**Completion didn't move; the detours did.** The trajectories make it plain: before, on `ctx-03`, `read_file` was truncated and the
+model **paged five times** with offset (each page cut to 4000 characters again) to reach line 679, 9 calls in total; after, the preview's
+tail shows the `[database]` section and the edit takes 3 calls. Strong models climb out of a truncation on their own; it costs them
+20–30% more calls.
+
+The trajectories also exposed a tool bug: `grep_files` always listed `path` as a directory, so passing a file **silently returned zero
+matches**, and models pass files all the time. Fixed (a file path searches that file); not separately quantified.
+
+### When they don't climb out: a confident wrong answer
+
+In the flash no-bash comparison, `react-min` (still silently truncating) read the log from line 1400 on `ctx-02`, got cut around line
+1460, and wrote the **last ERROR it could see** (r8198) as the answer; the real last one (r8148) came later. The full harness got 9/9.
+
+| flash, no bash | `my-agent` | `react-min` | `pi` |
+|---|---:|---:|---:|
+| ctx completion | **100%** | 88.9% | 88.9% |
+
+> No v4-pro no-bash numbers: the account ran out of balance midway and all 18 cells returned 402. Only that group was affected; every
+> other run was checked for 402s.
+
+### Four-harness comparison (salted, 21 tasks, 504 cells)
+
+| Model | harness | Completion | Cache hit | LLM calls/task | Prompt tokens/task | Cost/task |
+|---|---|---:|---:|---:|---:|---:|
+| flash | `my-agent` | **100.0%** | **86.6%** | 4.33 | 9,922 | $0.00051 |
+| flash | `pi` | **99.4%** | 83.6% | 4.51 | 8,576 | $0.00050 |
+| flash | `react-min` | **99.4%** | 82.8% | 5.25 | 9,419 | $0.00061 |
+| flash | `raw` | **91.1%** | 56.9% | 1.00 | 2,900 | $0.00055 |
+| v4-pro | `my-agent` | **100.0%** | 88.6% | 3.76 | 8,538 | $0.00156 |
+| v4-pro | `pi` | **99.4%** | **89.0%** | 4.08 | 7,786 | $0.00152 |
+| v4-pro | `react-min` | **100.0%** | 86.6% | 4.37 | 7,338 | $0.00169 |
+| v4-pro | `raw` | **80.1%** | 16.0% | 1.00 | 2,899 | $0.00254 |
+
+`raw` is both pricier and worse on the new tasks: it has to put the whole 700-line config into the prompt and emit it back whole, and
+fails `ctx-03` 3/3 on v4-pro.
+
 ## Resilience: what fair weather can't measure
 
 On the scoreboard, a 20-line while loop and a full harness score about the same — because when nothing fails, they genuinely are the same. Event sourcing only shows its value under failure. Hence a separate fault-injection suite (zero API cost, runs in seconds):
@@ -465,7 +528,7 @@ Results land in `packages/bench/results/`: `latest.md` (report) and `run-<timest
 Better stated here than pointed out later:
 
 1. **One model family.** Only DeepSeek v4 (flash / pro). The two tiers already show the "stronger model, less harness value" trend, but confirming the reverse — a wider gap on weaker models — needs weaker models.
-2. **17 tasks is small.** The dimensions are covered, but with only 1–6 tasks each, one task's variance moves a dimension's score noticeably.
+2. **21 tasks is small.** The dimensions are covered, but with only 1–6 tasks each, one task's variance moves a dimension's score noticeably.
 3. **n=3 doesn't suppress noise.** Re-running one configuration moved it 3.8pt. Separating differences under 2pt needs n≥10 — three times the cost, though the whole run is still only a couple of dollars.
 4. **`hard-03` isn't big enough.** Billed as a large workspace, it's 5.5k tokens inlined — `raw` handles it easily. Genuinely locking out a tool-less baseline needs 50k+ tokens.
 5. **Not SWE-bench yet.** No real repos, no dependency installation, no cross-language work. It measures the execution layer, not coding ability. Data layer is ready; see above.
