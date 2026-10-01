@@ -74,7 +74,9 @@ export const grepFilesTool: ToolFn = async (args, ctx) => {
   let re: RegExp;
   try { re = new RegExp(pattern, 'g'); } catch (e: any) { throw new Error(`正则无效:${e.message}`); }
 
-  const files = await ctx.workspace.list(glob);
+  // path 可以是目录也可以是文件。只按目录列的话,传文件会悄悄返回 0 条匹配 —— 模型偏偏常这么传
+  let files = await ctx.workspace.list(glob);
+  if (!files.length && await ctx.workspace.exists(glob)) files = [glob];
   const matches: { path: string; line: number; text: string }[] = [];
   for (const f of files) {
     if (f.endsWith('/') || matches.length >= 100) continue;
