@@ -125,3 +125,14 @@ test('runTool:未知工具与工具抛错都收敛成 ok:false,不炸 turn', asy
     assert.ok((boom.output as any).error);
   } finally { await cleanup(); }
 });
+
+test('grep_files:path 给单个文件时只搜这个文件(原先悄悄返回 0 条)', async () => {
+  const { ws, cleanup } = await fixture();
+  try {
+    await ws.write('config/app.ini', 'a = 1\nmax_connections = 100\n');
+    await ws.write('config/other.ini', 'max_connections = 7\n');
+    const r = await grepFilesTool({ pattern: 'max_connections', path: 'config/app.ini' }, ctx(ws)) as any;
+    assert.equal(r.match_count, 1);
+    assert.deepEqual(r.matches[0], { path: 'config/app.ini', line: 2, text: 'max_connections = 100' });
+  } finally { await cleanup(); }
+});

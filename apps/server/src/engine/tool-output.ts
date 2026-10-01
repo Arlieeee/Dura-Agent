@@ -26,5 +26,5 @@ export function inlineToolOutput(output: unknown, spilledTo?: string): string {
   if (text.length <= INLINE_LIMIT) return text;
   const half = INLINE_LIMIT / 2;
   return `${text.slice(0, half)}\n\n…(中间省略 ${text.length - 2 * half} 字符。完整结果在 ${spilledTo}:`
-    + `用 read_file 的 offset/limit 分段读,或 grep_files 搜索(path 设为 ${spilledTo.slice(0, spilledTo.lastIndexOf('/'))})…\n\n${text.slice(-half)}`;
+    + `用 read_file 的 offset/limit 分段读,或 grep_files(path=${spilledTo})搜索)…\n\n${text.slice(-half)}`;
 }

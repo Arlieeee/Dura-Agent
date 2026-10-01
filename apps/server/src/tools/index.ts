@@ -127,7 +127,7 @@ defineTool({
   description: '在工作区文件内容里按正则搜索,返回 路径:行号:内容。',
   parameters: {
     type: 'object',
-    properties: { pattern: str('JS 正则'), path: str('限定目录,默认 .') },
+    properties: { pattern: str('JS 正则'), path: str('限定目录或单个文件,默认 .') },
     required: ['pattern'],
   },
 });
