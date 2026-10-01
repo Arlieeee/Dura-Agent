@@ -4,11 +4,12 @@ import { codingTasks } from './coding.js';
 import { dataTasks } from './data.js';
 import { behaviorTasks } from './behavior.js';
 import { hardTasks } from './hard.js';
+import { contextTasks } from './context.js';
 import { humanEvalTasks, humanEvalAvailable } from './humaneval.js';
 import { sweBenchTasks, sweBenchAvailable } from './swebench.js';
 
 /** 自建任务集:离线、确定性、每题一个 oracle */
-export const allTasks: BenchTask[] = [...codingTasks, ...dataTasks, ...behaviorTasks, ...hardTasks];
+export const allTasks: BenchTask[] = [...codingTasks, ...dataTasks, ...behaviorTasks, ...hardTasks, ...contextTasks];
 
 /** 公开数据集需要显式点名(--tasks humaneval),不混进默认全量跑分:
  *  它们量大、判分要外部运行时,和自建题的成本量级不是一回事。 */

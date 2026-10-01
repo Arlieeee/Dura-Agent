@@ -1,5 +1,6 @@
 /** fold(events) → state:纯函数,无 I/O。状态是折叠,不是存储。 */
 import type { AgentEvent, ChatMsg, ToolCallReq } from '../../../../packages/protocol/src/index.js';
+import { inlineToolOutput } from './tool-output.js';
 
 export interface TurnState {
   threadId: string;
@@ -69,7 +70,7 @@ export function fold(events: AgentEvent[], turnId: string): TurnState {
         resultSeen.add(id);
         st.pendingCalls = st.pendingCalls.filter(c => c.id !== id);
         if (st.suspended?.tool_call_id === id) st.suspended = undefined;
-        st.msgs.push({ role: 'tool', tool_call_id: id, content: JSON.stringify(p.output ?? null).slice(0, 4000) });
+        st.msgs.push({ role: 'tool', tool_call_id: id, content: inlineToolOutput(p.output, p.spilled_to ? String(p.spilled_to) : undefined) });
         break;
       }
       case 'turn.suspended':

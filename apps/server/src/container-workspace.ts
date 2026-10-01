@@ -75,7 +75,8 @@ export class ContainerWorkspace implements WorkspaceLike {
   async list(rel = '.', max = 500): Promise<string[]> {
     const p = this.resolve(rel);
     // 不用 -printf:那是 GNU 独有,BSD(macOS)的 find 不认。目录靠尾部 / 区分
-    const skip = `-not -path '*/node_modules/*' -not -path '*/.git/*'`;
+    const skip = `-not -path '*/node_modules/*' -not -path '*/.git/*'`
+      + (p.includes('/.dura') ? '' : ` -not -path '*/.dura/*' -not -name .dura`);
     const r = await this.exec.exec(
       `{ find ${q(p)} ${skip} -type d | sed 's|$|/|'; find ${q(p)} ${skip} ! -type d; } 2>/dev/null | head -n ${max}`,
       { timeoutMs: 60_000 });

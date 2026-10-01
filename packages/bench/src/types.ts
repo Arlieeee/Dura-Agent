@@ -20,7 +20,7 @@ export interface BenchTask {
   id: string;
   category:
     | 'software-engineering' | 'data-analysis' | 'multi-file-refactor'
-    | 'retrieval' | 'error-recovery' | 'long-horizon' | 'constraint-following';
+    | 'retrieval' | 'error-recovery' | 'long-horizon' | 'constraint-following' | 'context-pressure';
   /** 一句话说明这题在考什么(报告里按类聚合) */
   probe: string;
   prompt: string;

@@ -10,6 +10,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { allTasks } from '../src/tasks/index.js';
+import { contextGolden } from '../src/tasks/context.js';
 import type { BenchTask, TaskWorkspace, Trace } from '../src/types.js';
 import { readFile, stat, readdir } from 'node:fs/promises';
 
@@ -131,6 +132,7 @@ const GOLDEN: Record<string, Record<string, string>> = {
   },
   'hard-03-large-workspace': { 'deprecated.txt': '' },        // 运行时从 setup 现推,见 goldenFor
   'hard-04-three-subsystems': { 'report.txt': '' },           // 同上
+  ...contextGolden,
 };
 
 /** 几道题的标准答案依赖固件本身,从 setup 现推而不是手抄——手抄迟早对不上 */
